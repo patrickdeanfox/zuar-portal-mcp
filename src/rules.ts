@@ -31,9 +31,16 @@ export type Severity = "error" | "warn" | "off";
 export type RuleId =
   | "no_css_in_html"
   | "no_html_in_css"
+  | "no_doctype_html_tags"
+  | "no_unsafe_js"
+  | "no_external_script_src"
+  | "no_inline_event_handlers"
+  | "angular_interpolation"
   | "require_top_level_config"
   | "require_debug_toggle"
   | "require_init"
+  | "require_loaded_callback"
+  | "no_data_polling"
   | "enforce_theme_vars";
 
 export interface RulesConfig {
@@ -47,36 +54,74 @@ interface PartialRulesInput {
   conventions?: string;
 }
 
-// Structure rules default to hard errors; style rules default to soft warnings.
+// Structure + safety rules default to hard errors; style rules default to warnings.
 const DEFAULT_SEVERITIES: Record<RuleId, Severity> = {
   no_css_in_html: "error",
   no_html_in_css: "error",
+  no_doctype_html_tags: "error",
+  no_unsafe_js: "error",
+  no_external_script_src: "warn",
+  no_inline_event_handlers: "warn",
+  angular_interpolation: "warn",
   require_top_level_config: "warn",
   require_debug_toggle: "warn",
   require_init: "warn",
+  require_loaded_callback: "warn",
+  no_data_polling: "warn",
   enforce_theme_vars: "warn",
 };
 
 const DEFAULT_CONVENTIONS = [
   "# zPortal block authoring conventions",
   "",
+  "Act as a senior front-end engineer fluent in Zuar Portal. Produce a finished,",
+  "themed surface, not a block in isolation.",
+  "",
   "## Section separation (enforced)",
   "- HTML and JS go in the HTML section only (the block's `json_data.html`).",
   "- CSS goes in the CSS section only (the block's `css` field).",
-  "- Never put `<style>` or `<link rel=\"stylesheet\">` in the HTML section.",
-  "- Never put HTML tags or `<script>` in the CSS section.",
-  "",
-  "## Theme",
-  "- Use the active portal theme via CSS variables (`var(--...)`).",
-  "- Do not hardcode colors/fonts the theme already provides.",
+  "- Never put `<style>`/`<link rel=\"stylesheet\">` in the HTML section, or markup in CSS.",
+  "- Never include `<!DOCTYPE>`/`<html>`/`<head>`/`<body>` — body-level markup only.",
   "",
   "## JS structure",
-  "- Always start with a top-level CONFIG block (consts, toggles, logging).",
-  "- Always gate console output behind a DEBUG flag in CONFIG; log verbosely when on.",
-  "- Always end with a single bottom-level `init()` that controls order of",
-  "  operations and handles race conditions, and call `init()` last.",
-  "- `const` by default, `let` only when reassigned, never `var`; use `===`;",
-  "  wrap async work in try/catch.",
+  "- Open `<script>` with a top-level config: a `DEBUG` flag (default false), the",
+  "  logger, `QUERY_INDEX` + column-name constants matching query aliases, selectors,",
+  "  and every numeric threshold. Hoist all magic numbers/strings here.",
+  "- Gate console output behind DEBUG via one logger: ",
+  "  `const log = (...a) => { if (DEBUG) console.log('[Block]', ...a); };`",
+  "- End with a single bottom-level `init()` orchestrator — the only call at end of",
+  "  script (`init();`). Helpers above it stay pure; side effects live in init().",
+  "",
+  "## Data + loading",
+  "- Read `currentBlock.queryResults[index]`; never read `.data` directly — use a",
+  "  `getQueryData(index)` helper. Column names are lowercase_with_underscores and must",
+  "  match the query aliases (mismatch is the #1 cause of an empty block).",
+  "- Obtain `currentBlock.getOnLoadedCallback()` early; call it exactly once after the",
+  "  UI is drawn (in a `finally` for async). Omitting it stalls the page (loaded_timeout).",
+  "- Script runs once per query load; return early if required queries haven't loaded.",
+  "- No polling/listeners for data (setInterval, DOMContentLoaded). No custom loading",
+  "  states — Portal renders a skeleton loader.",
+  "",
+  "## Theme (enforced)",
+  "- Consume the theme via `var(--color-*, fallback)`; never hardcode hex/fonts.",
+  "  Key tokens: --color-primary #FA225B, --color-text #313131, --block-bg-color,",
+  "  --system-gray #F6F6F6, --color-lightgray #E4E4E4, --font-stack-primary 'Roboto'.",
+  "- Scope all CSS under the block's own root id.",
+  "",
+  "## AngularJS $compile footguns",
+  "- Block HTML runs through `$compile`. `{{ }}` is evaluated — escape literals as",
+  "  `&#123;&#123;` or set text via JS. `$` in strings (currency) can be mangled — use",
+  "  `Intl.NumberFormat`. Same caution for `{`, `}`, and `ng-` attributes.",
+  "",
+  "## Interactivity + safety (enforced)",
+  "- Inline `on*` handlers and external `<script src>` are stripped — use",
+  "  `addEventListener` / `data-zuar-action` and `name=` inputs; load libs dynamically",
+  "  or via AMCHARTS_LOADER. Give clickable elements hover/focus-visible/active states.",
+  "- No `eval`/`new Function()`/`document.write`; no untrusted DOM interpolation.",
+  "",
+  "## Code style",
+  "- `const` by default, `let` only when reassigned, never `var`; `===`; async/await",
+  "  in try/catch. One statement per line; descriptive names; never minify.",
 ].join("\n");
 
 const BUILTIN_DEFAULTS: RulesConfig = {
@@ -209,9 +254,27 @@ export function validateBlock(body: Record<string, unknown>): ValidationResult {
   if (hasCss && (/<script[\s>]/i.test(css) || /<\/?[a-z][a-z0-9]*[\s>/]/i.test(css))) {
     report("no_html_in_css", "The CSS field must contain only CSS — found HTML/JS markup.");
   }
+  if (hasHtml && /<!doctype|<html[\s>]|<head[\s>]|<body[\s>]/i.test(html)) {
+    report("no_doctype_html_tags", "Use body-level markup only — remove <!DOCTYPE>/<html>/<head>/<body>.");
+  }
+
+  // ── Safety rules ──
+  if (hasHtml && (/\beval\s*\(/.test(html) || /new\s+Function\s*\(/.test(html) || /document\.write\s*\(/.test(html))) {
+    report("no_unsafe_js", "Remove eval()/new Function()/document.write — blocked in the portal sandbox.");
+  }
+  if (hasHtml && /<script[^>]+\bsrc\s*=/i.test(html)) {
+    report("no_external_script_src", "External <script src> is stripped — load libraries dynamically or via AMCHARTS_LOADER.");
+  }
+  if (hasHtml && /\son[a-z]+\s*=\s*["']/i.test(html)) {
+    report("no_inline_event_handlers", "Inline on* handlers are stripped — use addEventListener or data-zuar-action.");
+  }
+  if (hasHtml && /\{\{/.test(html)) {
+    report("angular_interpolation", "'{{' is evaluated by AngularJS $compile — escape as &#123;&#123; or set text via JS.");
+  }
 
   // ── Style rules (only meaningful when HTML/JS is provided) ──
   if (hasHtml && html.trim()) {
+    const hasScript = /<script[\s>]/i.test(html);
     if (!/\bconst\s+CONFIG\b/.test(html) && !/\bDEBUG\b/.test(html)) {
       report("require_top_level_config", "No top-level CONFIG block detected (const CONFIG / DEBUG).");
     }
@@ -220,6 +283,12 @@ export function validateBlock(body: Record<string, unknown>): ValidationResult {
     }
     if (!/\binit\s*\(\s*\)/.test(html)) {
       report("require_init", "No bottom-level init() call detected to control order of operations.");
+    }
+    if (hasScript && !/getOnLoadedCallback/.test(html)) {
+      report("require_loaded_callback", "No getOnLoadedCallback() — obtain it early and call once after render, or the loader hangs (loaded_timeout).");
+    }
+    if (/setInterval\s*\(/.test(html) || /DOMContentLoaded/.test(html)) {
+      report("no_data_polling", "Query data is ready when the script runs — drop setInterval/DOMContentLoaded polling.");
     }
   }
 

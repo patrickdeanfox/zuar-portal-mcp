@@ -3,9 +3,16 @@
   "enforcement": {
     "no_css_in_html": "error",
     "no_html_in_css": "error",
+    "no_doctype_html_tags": "error",
+    "no_unsafe_js": "error",
+    "no_external_script_src": "warn",
+    "no_inline_event_handlers": "warn",
+    "angular_interpolation": "warn",
     "require_top_level_config": "warn",
     "require_debug_toggle": "warn",
     "require_init": "warn",
+    "require_loaded_callback": "warn",
+    "no_data_polling": "warn",
     "enforce_theme_vars": "warn"
   },
   "conventions_file": "conventions.md"

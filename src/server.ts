@@ -174,6 +174,8 @@ function registerTools(server: McpServer): void {
     async (args) => {
       try {
         const body = buildBlockBody(args);
+        // Portal scopeCss crashes on a null css; never create a block without a css list.
+        if (body.css === undefined) body.css = [];
         const v = validateBlock(body);
         if (v.errors.length > 0) return fail(formatViolations(v));
         const res = await request("POST", "/api/blocks", body);
@@ -211,10 +213,17 @@ function registerTools(server: McpServer): void {
     async (args) => {
       try {
         const { block_id, ...rest } = args;
-        const body = buildBlockBody(rest);
-        const v = validateBlock(body);
+        // The portal PUT is a full replace (and requires `name`). Fetch the current
+        // block and merge the provided fields over it so untouched fields aren't nulled.
+        const existing = await request<Record<string, unknown>>(
+          "GET",
+          `/api/blocks/${encodeURIComponent(block_id)}`
+        );
+        const merged = { ...buildBlockBody(existing), ...buildBlockBody(rest) };
+        if (merged.css === undefined || merged.css === null) merged.css = [];
+        const v = validateBlock(merged);
         if (v.errors.length > 0) return fail(formatViolations(v));
-        const res = await request("PUT", `/api/blocks/${encodeURIComponent(block_id)}`, body);
+        const res = await request("PUT", `/api/blocks/${encodeURIComponent(block_id)}`, merged);
         return ok(withWarnings(res, v.warnings));
       } catch (e) {
         return fail((e as Error).message);
@@ -445,17 +454,34 @@ function registerPrompts(server: McpServer): void {
         ? `The user mentioned this datasource: "${datasource_hint}".`
         : "The datasource is not specified yet.";
       const text = [
-        `Build a Zuar Portal HTML block for this goal: ${goal}`,
+        "Act as a senior front-end engineer fluent in Zuar Portal. Build a finished,",
+        `themed HTML block for this goal: ${goal}`,
         "",
         "Follow this order:",
         "1. Read the resources zportal://guide/block-structure, zportal://guide/currentblock, " +
           "and zportal://guide/conventions (the active always/never rules) — and " +
           "zportal://guide/amcharts-loader if the block needs a chart.",
         `2. ${dsLine} Call list_datasources (and list_queries on 1.18+) to find the right __source__ ` +
-          "UUID, then fetch_sample_rows to see real columns and values.",
-        "3. Produce the block as two fields: HTML+JS (no <html>/<head>/<body>) and CSS (no <style>). " +
-          "Use the CONFIG/log/init scaffold and theme CSS variables.",
-        "4. Create it with create_block (type is html). Report the new block id.",
+          "UUID, then fetch_sample_rows to see the real column aliases and values.",
+        "3. Author two fields:",
+        "   - HTML+JS (body-level only: no <!DOCTYPE>/<html>/<head>/<body>/<style>).",
+        "   - CSS (no <style> tags), scoped under the block's own root id.",
+        "   Structure the <script> as: top-level config (DEBUG flag, DEBUG-gated logger, " +
+          "QUERY_INDEX + column-name constants matching the query aliases, selectors, thresholds) " +
+          "-> getQueryData(index) helper (never read currentBlock.queryResults[n].data directly) " +
+          "-> pure render helpers -> a single bottom-level init() called last. Obtain " +
+          "currentBlock.getOnLoadedCallback() early and call it exactly once after render " +
+          "(in a finally for async) or the loader hangs.",
+        "4. Use theme variables (var(--color-*, fallback)) — never hardcode hex/fonts. Don't " +
+          "author loading states (Portal has a skeleton loader). Avoid AngularJS $compile " +
+          "footguns: {{ }} is evaluated (escape or set via JS); format currency with " +
+          "Intl.NumberFormat to dodge the $ issue. Wire interactions with addEventListener / " +
+          "data-zuar-action — inline on* handlers and external <script src> are stripped. No " +
+          "eval/new Function()/document.write.",
+        "5. QA self-review before shipping: (a) keys read off queryResults match the query " +
+          "column aliases and null/empty rows are handled; (b) no <html>/<head>/<body>/<style>, " +
+          "CSS scoped, async calls the loaded callback; (c) no unsafe JS. Fix issues, then create " +
+          "with create_block (type is html) and report the new block id.",
       ].join("\n");
       return {
         messages: [{ role: "user", content: { type: "text", text } }],
