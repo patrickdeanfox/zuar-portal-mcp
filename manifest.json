@@ -1,0 +1,75 @@
+{
+  "manifest_version": "0.3",
+  "name": "zuar-portal-mcp-server",
+  "display_name": "Zuar Portal Blocks",
+  "version": "1.0.0",
+  "description": "Create and manage Zuar Portal HTML blocks with Claude.",
+  "long_description": "An MCP server that lets Claude build Zuar Portal (zPortal) HTML blocks for you. It can list, read, create, update, and delete HTML blocks via the Portal REST API, discover datasources and saved queries, and preview sample rows so blocks get wired to real data. Bundled authoring guidance (block structure, currentBlock data access, the amCharts 5 loader pattern) helps Claude produce correct two-field blocks. Only HTML blocks are created or modified.",
+  "author": {
+    "name": "Patrick Fox"
+  },
+  "license": "MIT",
+  "keywords": ["zuar", "zportal", "dashboard", "blocks", "analytics"],
+  "server": {
+    "type": "node",
+    "entry_point": "dist/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/index.js"],
+      "env": {
+        "PORTAL_URL": "${user_config.portal_url}",
+        "PORTAL_API_KEY": "${user_config.portal_api_key}",
+        "PORTAL_USER_ID": "${user_config.portal_user_id}"
+      }
+    }
+  },
+  "tools": [
+    { "name": "list_blocks", "description": "List blocks on the portal." },
+    { "name": "get_block", "description": "Get a block by UUID." },
+    { "name": "create_block", "description": "Create an HTML block." },
+    { "name": "update_block", "description": "Update an HTML block." },
+    { "name": "delete_block", "description": "Delete a block by UUID." },
+    { "name": "list_datasources", "description": "List datasources." },
+    { "name": "list_queries", "description": "List saved queries (Portal 1.18+)." },
+    { "name": "fetch_sample_rows", "description": "Preview rows from a datasource." }
+  ],
+  "prompts": [
+    {
+      "name": "create_zportal_block",
+      "description": "Guided workflow to build a correct zPortal HTML block.",
+      "arguments": ["goal", "datasource_hint"],
+      "text": "Build a Zuar Portal HTML block for: ${arguments.goal}. Datasource hint: ${arguments.datasource_hint}. Read the zportal://guide resources, discover the datasource, then create the block."
+    }
+  ],
+  "tools_generated": false,
+  "prompts_generated": false,
+  "compatibility": {
+    "claude_desktop": ">=0.10.0",
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "node": ">=18.0.0"
+    }
+  },
+  "user_config": {
+    "portal_url": {
+      "type": "string",
+      "title": "Portal URL",
+      "description": "Base URL of your Zuar Portal, e.g. https://your-portal.zuarbase.net",
+      "required": true
+    },
+    "portal_api_key": {
+      "type": "string",
+      "title": "Portal API Key",
+      "description": "API key from zPortal Admin -> Auth -> API Keys.",
+      "sensitive": true,
+      "required": true
+    },
+    "portal_user_id": {
+      "type": "string",
+      "title": "Portal User ID",
+      "description": "Your user UUID from zPortal Admin -> Users (copy from the URL).",
+      "sensitive": true,
+      "required": true
+    }
+  }
+}

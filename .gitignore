@@ -1,0 +1,5 @@
+node_modules/
+dist/
+*.mcpb
+config.json
+.DS_Store
