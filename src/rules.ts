@@ -1,0 +1,233 @@
+/**
+ * rules.ts
+ *
+ * Authoring-rule configuration and block validation.
+ *
+ * Rules drive two things:
+ *   1. Guidance — the `conventions` text is surfaced as a resource and injected
+ *      into the create-block prompt so the model authors blocks correctly.
+ *   2. Enforcement — `validateBlock` inspects a block payload before it is sent
+ *      to the portal and returns errors (severity "error") and warnings
+ *      (severity "warn"). Each rule's severity is configurable.
+ *
+ * Resolution order for the active config (first hit wins, then merged over
+ * built-in defaults): PORTAL_BLOCK_RULES_FILE env path -> bundled
+ * assets/rules.json -> built-in defaults. Any failure falls back to defaults.
+ */
+
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { log } from "./config.js";
+
+// ── Top-level config ────────────────────────────────────────────────────────
+const RULES_ENV_VAR = "PORTAL_BLOCK_RULES_FILE";
+const BUNDLED_RULES_RELPATH = ["..", "assets", "rules.json"]; // from dist/ -> repo root
+const BUNDLED_CONVENTIONS_RELPATH = ["..", "assets", "conventions.md"];
+
+export type Severity = "error" | "warn" | "off";
+
+// Every enforceable rule id. Keep in sync with DEFAULT_SEVERITIES + checks.
+export type RuleId =
+  | "no_css_in_html"
+  | "no_html_in_css"
+  | "require_top_level_config"
+  | "require_debug_toggle"
+  | "require_init"
+  | "enforce_theme_vars";
+
+export interface RulesConfig {
+  enforcement: Record<RuleId, Severity>;
+  conventions: string;
+}
+
+// Shape of a parsed/partial config file before merge over defaults.
+interface PartialRulesInput {
+  enforcement?: Partial<Record<RuleId, Severity>>;
+  conventions?: string;
+}
+
+// Structure rules default to hard errors; style rules default to soft warnings.
+const DEFAULT_SEVERITIES: Record<RuleId, Severity> = {
+  no_css_in_html: "error",
+  no_html_in_css: "error",
+  require_top_level_config: "warn",
+  require_debug_toggle: "warn",
+  require_init: "warn",
+  enforce_theme_vars: "warn",
+};
+
+const DEFAULT_CONVENTIONS = [
+  "# zPortal block authoring conventions",
+  "",
+  "## Section separation (enforced)",
+  "- HTML and JS go in the HTML section only (the block's `json_data.html`).",
+  "- CSS goes in the CSS section only (the block's `css` field).",
+  "- Never put `<style>` or `<link rel=\"stylesheet\">` in the HTML section.",
+  "- Never put HTML tags or `<script>` in the CSS section.",
+  "",
+  "## Theme",
+  "- Use the active portal theme via CSS variables (`var(--...)`).",
+  "- Do not hardcode colors/fonts the theme already provides.",
+  "",
+  "## JS structure",
+  "- Always start with a top-level CONFIG block (consts, toggles, logging).",
+  "- Always gate console output behind a DEBUG flag in CONFIG; log verbosely when on.",
+  "- Always end with a single bottom-level `init()` that controls order of",
+  "  operations and handles race conditions, and call `init()` last.",
+  "- `const` by default, `let` only when reassigned, never `var`; use `===`;",
+  "  wrap async work in try/catch.",
+].join("\n");
+
+const BUILTIN_DEFAULTS: RulesConfig = {
+  enforcement: DEFAULT_SEVERITIES,
+  conventions: DEFAULT_CONVENTIONS,
+};
+
+// ── Module state (config is read once per process) ────────────────────────────
+let cachedRules: RulesConfig | null = null;
+
+// ── Pure helpers ──────────────────────────────────────────────────────────────
+function distDir(): string {
+  return path.dirname(fileURLToPath(import.meta.url));
+}
+
+// Coerce a string|string[] payload field to a single searchable string.
+function asText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.filter((v) => typeof v === "string").join("\n");
+  return "";
+}
+
+// Pull the HTML-section source (HTML + JS) out of a block body.
+function htmlSource(body: Record<string, unknown>): string {
+  const jsonData = body.json_data as Record<string, unknown> | undefined;
+  return asText(jsonData?.html);
+}
+
+// Merge a parsed partial config over the built-in defaults. Unknown keys ignored.
+function mergeConfig(partial: PartialRulesInput): RulesConfig {
+  const enforcement: Record<RuleId, Severity> = { ...DEFAULT_SEVERITIES };
+  const incoming: Partial<Record<RuleId, Severity>> = partial.enforcement ?? {};
+  for (const key of Object.keys(DEFAULT_SEVERITIES) as RuleId[]) {
+    const sev = incoming[key];
+    if (sev === "error" || sev === "warn" || sev === "off") enforcement[key] = sev;
+  }
+  const conventions =
+    typeof partial.conventions === "string" && partial.conventions.trim()
+      ? partial.conventions
+      : DEFAULT_CONVENTIONS;
+  return { enforcement, conventions };
+}
+
+// ── IO ────────────────────────────────────────────────────────────────────────
+// Read + parse a rules JSON file. `conventions_file` (relative to the JSON file)
+// is resolved into `conventions` when present. Returns null on any failure.
+function readRulesFile(file: string): PartialRulesInput | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
+    const result: PartialRulesInput = {};
+    if (raw.enforcement && typeof raw.enforcement === "object") {
+      result.enforcement = raw.enforcement as Partial<Record<RuleId, Severity>>;
+    }
+    if (typeof raw.conventions === "string") {
+      result.conventions = raw.conventions;
+    } else if (typeof raw.conventions_file === "string") {
+      const convPath = path.resolve(path.dirname(file), raw.conventions_file);
+      if (fs.existsSync(convPath)) result.conventions = fs.readFileSync(convPath, "utf8");
+    }
+    return result;
+  } catch (e) {
+    log("rules: failed to read", file, (e as Error).message);
+    return null;
+  }
+}
+
+// Locate and load the active rules config. Falls back to built-in defaults.
+function resolveRules(): RulesConfig {
+  // 1. Explicit env override.
+  const envPath = process.env[RULES_ENV_VAR];
+  if (envPath) {
+    const parsed = readRulesFile(envPath);
+    if (parsed) return mergeConfig(parsed);
+    log("rules: env override unreadable, falling back", envPath);
+  }
+
+  // 2. Bundled defaults beside the build.
+  const bundled = path.join(distDir(), ...BUNDLED_RULES_RELPATH);
+  if (fs.existsSync(bundled)) {
+    const parsed = readRulesFile(bundled);
+    if (parsed) {
+      // Bundled rules.json may rely on the sibling conventions.md by default.
+      if (parsed.conventions === undefined) {
+        const convFile = path.join(distDir(), ...BUNDLED_CONVENTIONS_RELPATH);
+        if (fs.existsSync(convFile)) parsed.conventions = fs.readFileSync(convFile, "utf8");
+      }
+      return mergeConfig(parsed);
+    }
+  }
+
+  // 3. Built-in.
+  return BUILTIN_DEFAULTS;
+}
+
+// ── Public API ──────────────────────────────────────────────────────────────
+export function getRules(): RulesConfig {
+  if (cachedRules === null) cachedRules = resolveRules();
+  return cachedRules;
+}
+
+export interface ValidationResult {
+  errors: string[];
+  warnings: string[];
+}
+
+/**
+ * Validate a block payload against the active rules. Only checks rules whose
+ * required input is present (so partial updates aren't penalised for fields
+ * they don't touch). Each violation is routed to errors/warnings by severity.
+ */
+export function validateBlock(body: Record<string, unknown>): ValidationResult {
+  const { enforcement } = getRules();
+  const result: ValidationResult = { errors: [], warnings: [] };
+
+  const hasHtml = body.json_data !== undefined;
+  const hasCss = body.css !== undefined;
+  const html = htmlSource(body);
+  const css = asText(body.css);
+
+  const report = (rule: RuleId, message: string): void => {
+    const sev = enforcement[rule];
+    if (sev === "error") result.errors.push(`[${rule}] ${message}`);
+    else if (sev === "warn") result.warnings.push(`[${rule}] ${message}`);
+  };
+
+  // ── Structure rules (need the relevant section present) ──
+  if (hasHtml && (/<style[\s>]/i.test(html) || /<link[^>]+stylesheet/i.test(html))) {
+    report("no_css_in_html", "CSS belongs in the CSS field, not the HTML section (found <style>/<link>).");
+  }
+  if (hasCss && (/<script[\s>]/i.test(css) || /<\/?[a-z][a-z0-9]*[\s>/]/i.test(css))) {
+    report("no_html_in_css", "The CSS field must contain only CSS — found HTML/JS markup.");
+  }
+
+  // ── Style rules (only meaningful when HTML/JS is provided) ──
+  if (hasHtml && html.trim()) {
+    if (!/\bconst\s+CONFIG\b/.test(html) && !/\bDEBUG\b/.test(html)) {
+      report("require_top_level_config", "No top-level CONFIG block detected (const CONFIG / DEBUG).");
+    }
+    if (!/\bDEBUG\b/.test(html)) {
+      report("require_debug_toggle", "No DEBUG-gated logging toggle detected.");
+    }
+    if (!/\binit\s*\(\s*\)/.test(html)) {
+      report("require_init", "No bottom-level init() call detected to control order of operations.");
+    }
+  }
+
+  // ── Theme rule (either section can violate) ──
+  const themeScope = `${html}\n${css}`;
+  if ((hasHtml || hasCss) && /#[0-9a-fA-F]{3,8}\b/.test(themeScope) && !/var\(\s*--/.test(themeScope)) {
+    report("enforce_theme_vars", "Hardcoded color(s) found with no theme variables (use var(--...)).");
+  }
+
+  return result;
+}

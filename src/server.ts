@@ -10,6 +10,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { request } from "./portalClient.js";
 import { GUIDES } from "./guidance.js";
+import { getRules, validateBlock, type ValidationResult } from "./rules.js";
 
 // ── Top-level config ────────────────────────────────────────────────────────
 const SERVER_NAME = "zuar-portal-mcp-server";
@@ -41,12 +42,32 @@ function fail(message: string): ToolResult {
 }
 
 // Build an /api/blocks body from validated args, forcing html type.
+// The portal requires `css` to be a list; a raw string is wrapped into one.
 function buildBlockBody(args: Record<string, unknown>): Record<string, unknown> {
   const body: Record<string, unknown> = { type: ONLY_BLOCK_TYPE };
   for (const key of ["name", "data", "css", "json_data", "tags", "access"] as const) {
     if (args[key] !== undefined) body[key] = args[key];
   }
+  if (typeof body.css === "string") body.css = [body.css];
   return body;
+}
+
+// Format a hard-reject message listing the rule violations (errors first).
+function formatViolations(v: ValidationResult): string {
+  const lines = ["Block rejected by authoring rules:"];
+  for (const e of v.errors) lines.push(`  ERROR  ${e}`);
+  for (const w of v.warnings) lines.push(`  warn   ${w}`);
+  lines.push("Fix the ERROR items, or set their severity to \"warn\"/\"off\" in rules.json.");
+  return lines.join("\n");
+}
+
+// Attach non-blocking warnings to a successful tool payload.
+function withWarnings(payload: unknown, warnings: string[]): unknown {
+  if (warnings.length === 0) return payload;
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    return { ...(payload as Record<string, unknown>), _warnings: warnings };
+  }
+  return { result: payload, _warnings: warnings };
 }
 
 // ── Shared zod fragments ──────────────────────────────────────────────────────
@@ -152,7 +173,11 @@ function registerTools(server: McpServer): void {
     },
     async (args) => {
       try {
-        return ok(await request("POST", "/api/blocks", buildBlockBody(args)));
+        const body = buildBlockBody(args);
+        const v = validateBlock(body);
+        if (v.errors.length > 0) return fail(formatViolations(v));
+        const res = await request("POST", "/api/blocks", body);
+        return ok(withWarnings(res, v.warnings));
       } catch (e) {
         return fail((e as Error).message);
       }
@@ -186,9 +211,11 @@ function registerTools(server: McpServer): void {
     async (args) => {
       try {
         const { block_id, ...rest } = args;
-        return ok(
-          await request("PUT", `/api/blocks/${encodeURIComponent(block_id)}`, buildBlockBody(rest))
-        );
+        const body = buildBlockBody(rest);
+        const v = validateBlock(body);
+        if (v.errors.length > 0) return fail(formatViolations(v));
+        const res = await request("PUT", `/api/blocks/${encodeURIComponent(block_id)}`, body);
+        return ok(withWarnings(res, v.warnings));
       } catch (e) {
         return fail((e as Error).message);
       }
@@ -305,6 +332,66 @@ function registerTools(server: McpServer): void {
       }
     }
   );
+
+  // list_layouts
+  server.registerTool(
+    "list_layouts",
+    {
+      title: "List portal layouts (pages)",
+      description:
+        "List layouts on the portal. A layout is a page; its json_data.grid holds which blocks " +
+        "are placed on the page and where. Use this to find the UUID of the page you want to edit.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    async () => {
+      try {
+        return ok(await request("GET", "/api/layouts"));
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+
+  // get_layout
+  server.registerTool(
+    "get_layout",
+    {
+      title: "Get a layout (page)",
+      description:
+        "Fetch a single layout by UUID, including its json_data.grid (block placement and sizes). " +
+        "Read this before changing a page's block layout so writes are based on the real grid shape.",
+      inputSchema: { layout_id: z.string().min(1).describe("Layout (page) UUID.") },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    async (args) => {
+      try {
+        return ok(await request("GET", `/api/layouts/${encodeURIComponent(args.layout_id)}`));
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+
+  // get_rules
+  server.registerTool(
+    "get_rules",
+    {
+      title: "Get active authoring rules",
+      description:
+        "Return the active block-authoring rules: per-rule enforcement severities and the " +
+        "conventions text. Read this to see what create_block/update_block will enforce.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async () => {
+      try {
+        return ok(getRules());
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
 }
 
 // ── Resources (bundled authoring guidance) ────────────────────────────────────
@@ -319,6 +406,21 @@ function registerResources(server: McpServer): void {
       })
     );
   }
+
+  // Active authoring conventions (configurable via rules.json / PORTAL_BLOCK_RULES_FILE).
+  server.registerResource(
+    "conventions",
+    "zportal://guide/conventions",
+    {
+      title: "Block authoring conventions (active rules)",
+      description:
+        "The always/never rules and code-style conventions enforced by create_block/update_block.",
+      mimeType: "text/markdown",
+    },
+    async (uri) => ({
+      contents: [{ uri: uri.href, mimeType: "text/markdown", text: getRules().conventions }],
+    })
+  );
 }
 
 // ── Prompts ───────────────────────────────────────────────────────────────────
@@ -346,8 +448,9 @@ function registerPrompts(server: McpServer): void {
         `Build a Zuar Portal HTML block for this goal: ${goal}`,
         "",
         "Follow this order:",
-        "1. Read the resources zportal://guide/block-structure and zportal://guide/currentblock " +
-          "(and zportal://guide/amcharts-loader if the block needs a chart).",
+        "1. Read the resources zportal://guide/block-structure, zportal://guide/currentblock, " +
+          "and zportal://guide/conventions (the active always/never rules) — and " +
+          "zportal://guide/amcharts-loader if the block needs a chart.",
         `2. ${dsLine} Call list_datasources (and list_queries on 1.18+) to find the right __source__ ` +
           "UUID, then fetch_sample_rows to see real columns and values.",
         "3. Produce the block as two fields: HTML+JS (no <html>/<head>/<body>) and CSS (no <style>). " +

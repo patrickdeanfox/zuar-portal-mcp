@@ -1,0 +1,12 @@
+{
+  "$comment": "Authoring rules for the Zuar Portal MCP server. Edit severities or point PORTAL_BLOCK_RULES_FILE at your own copy. Severity is one of: error (hard-reject the create/update), warn (save but report), off (skip the check). 'conventions_file' is resolved relative to this file; or replace it with an inline 'conventions' string.",
+  "enforcement": {
+    "no_css_in_html": "error",
+    "no_html_in_css": "error",
+    "require_top_level_config": "warn",
+    "require_debug_toggle": "warn",
+    "require_init": "warn",
+    "enforce_theme_vars": "warn"
+  },
+  "conventions_file": "conventions.md"
+}
