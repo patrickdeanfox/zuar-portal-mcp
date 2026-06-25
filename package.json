@@ -1,7 +1,7 @@
 {
   "name": "zuar-portal-mcp-server",
-  "version": "1.0.0",
-  "description": "MCP server that lets Claude create and manage Zuar Portal HTML blocks.",
+  "version": "2.0.0",
+  "description": "MCP server that lets Claude create and manage Zuar Portal blocks, pages, data sources, queries, users and more.",
   "license": "MIT",
   "type": "module",
   "bin": {

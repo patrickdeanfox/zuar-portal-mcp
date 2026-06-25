@@ -36,6 +36,7 @@ export type RuleId =
   | "no_external_script_src"
   | "no_inline_event_handlers"
   | "angular_interpolation"
+  | "no_deprecated_data_api"
   | "require_top_level_config"
   | "require_debug_toggle"
   | "require_init"
@@ -63,6 +64,7 @@ const DEFAULT_SEVERITIES: Record<RuleId, Severity> = {
   no_external_script_src: "warn",
   no_inline_event_handlers: "warn",
   angular_interpolation: "warn",
+  no_deprecated_data_api: "warn",
   require_top_level_config: "warn",
   require_debug_toggle: "warn",
   require_init: "warn",
@@ -96,6 +98,7 @@ const DEFAULT_CONVENTIONS = [
   "- Read `currentBlock.queryResults[index]`; never read `.data` directly — use a",
   "  `getQueryData(index)` helper. Column names are lowercase_with_underscores and must",
   "  match the query aliases (mismatch is the #1 cause of an empty block).",
+  "- Deprecated, don't use: currentBlock.data/.columns, zPortal.dataSource, fetchResults.",
   "- Obtain `currentBlock.getOnLoadedCallback()` early; call it exactly once after the",
   "  UI is drawn (in a `finally` for async). Omitting it stalls the page (loaded_timeout).",
   "- Script runs once per query load; return early if required queries haven't loaded.",
@@ -106,7 +109,7 @@ const DEFAULT_CONVENTIONS = [
   "- Consume the theme via `var(--color-*, fallback)`; never hardcode hex/fonts.",
   "  Key tokens: --color-primary #FA225B, --color-text #313131, --block-bg-color,",
   "  --system-gray #F6F6F6, --color-lightgray #E4E4E4, --font-stack-primary 'Roboto'.",
-  "- Scope all CSS under the block's own root id.",
+  "- Wrap markup in `<div id=\"zuar-block-root\">` and scope all CSS under #zuar-block-root.",
   "",
   "## AngularJS $compile footguns",
   "- Block HTML runs through `$compile`. `{{ }}` is evaluated — escape literals as",
@@ -270,6 +273,9 @@ export function validateBlock(body: Record<string, unknown>): ValidationResult {
   }
   if (hasHtml && /\{\{/.test(html)) {
     report("angular_interpolation", "'{{' is evaluated by AngularJS $compile — escape as &#123;&#123; or set text via JS.");
+  }
+  if (hasHtml && (/currentBlock\.(data|columns)\b/.test(html) || /zPortal\.dataSource\b/.test(html) || /\bfetchResults\b/.test(html))) {
+    report("no_deprecated_data_api", "Deprecated data API — use currentBlock.queryResults[n] via a getQueryData() helper (not currentBlock.data/.columns, zPortal.dataSource, or fetchResults).");
   }
 
   // ── Style rules (only meaningful when HTML/JS is provided) ──

@@ -1,10 +1,10 @@
 # Zuar Portal Blocks — MCP Server
 
-An [MCP](https://modelcontextprotocol.io) server that lets **Claude build and manage Zuar Portal (zPortal) HTML blocks** for you. Claude can discover your datasources, preview real data, and create / update / delete HTML blocks through the Portal REST API — with bundled authoring guidance so the blocks it produces follow zPortal conventions.
+An [MCP](https://modelcontextprotocol.io) server that lets **Claude operate your Zuar Portal (zPortal)** for you. Claude can author HTML blocks, manage pages, data sources, queries, db modifications, partials, themes and users, preview real data, and run queries — through the Portal REST + auth APIs, with bundled authoring guidance so the blocks it produces follow zPortal conventions.
 
 > **⬇️ Quick install (Claude Desktop):** download **`zuar-portal-mcp.mcpb`** from the [latest release](https://github.com/patrickdeanfox/zuar-portal-mcp/releases/latest) and double-click it, or drag it onto Claude Desktop. You'll be asked for three portal values (below) and that's it — no terminal, no config files.
 
-Only **HTML blocks** are created or modified. Other block types are visible via `list_blocks`, but this server will never create or change them.
+**Block writes are validated.** HTML blocks go through dedicated, validated tools (`create_block`/`update_block`). Every other resource is reached through generic resource tools. **Writes are gated by risk domain** — content edits are on by default; data (SQL) and admin (users/security) writes are opt-in (see [Write safety](#write-safety)).
 
 ---
 
@@ -27,18 +27,45 @@ Only **HTML blocks** are created or modified. Other block types are visible via 
 
 ## What Claude can do with it
 
-**Tools**
+### Block tools (typed + validated)
 
 | Tool | What it does |
 |------|--------------|
 | `list_blocks` | List blocks on the portal (optionally by ID, or names only). |
 | `get_block` | Fetch one block by UUID, including its HTML/CSS and query config. |
-| `create_block` | Create an HTML block (full payload: name, data, css, json_data, tags, access). |
-| `update_block` | Update an HTML block — only the fields you pass are sent. |
+| `create_block` | Create an HTML block (validated against authoring rules). |
+| `update_block` | Update an HTML block — merged over the current block so untouched fields survive. |
 | `delete_block` | Delete a block by UUID. |
-| `list_datasources` | Find the `__source__` UUID and name of a datasource. |
-| `list_queries` | List saved queries (Portal 1.18+). |
-| `fetch_sample_rows` | Preview a few rows so blocks get wired to real column names. |
+
+### Generic resource tools
+
+One set of tools operates every other resource. Pass `resource` plus a `body`/`id`. Call `describe_resource` to see each resource's fields, required-to-create fields, supported verbs, and risk domain.
+
+| Tool | What it does |
+|------|--------------|
+| `describe_resource` | List resources, or describe one (fields, verbs, domain). |
+| `list_resource` | List records — e.g. `resource: "datasource"` for discovery. |
+| `get_resource` | Get one record by id. |
+| `create_resource` | Create a record (write-gated by domain). |
+| `update_resource` | Update a record (merged over current; write-gated). |
+| `delete_resource` | Delete a record (write-gated). |
+
+**Covered resources:** `layout` (pages), `datasource`, `query`, `db_modification`, `partial`, `theme`, `snippet`, `translation`, `dashboard`, `tag`, `user`, `group`, `permission`, `access_policy`, `api_key`, `credential`, `system`.
+
+### Action tools
+
+| Tool | What it does | Domain |
+|------|--------------|--------|
+| `fetch_sample_rows` | Preview rows from a datasource to wire blocks to real columns. | read |
+| `execute_query` | Run a saved query by id and return results. | read |
+| `run_db_modification` | Run a saved DB write by name. Needs `confirm: true`. | data |
+| `change_password` | Change the current user's password. | admin |
+| `get_user_groups` / `set_user_groups` | Read / replace a user's group membership. | read / admin |
+| `get_user_permissions` / `set_user_permissions` | Read / replace a user's permissions. | read / admin |
+| `get_me` / `update_me` | Read / update the current user's profile. | read / admin |
+| `get_config` / `update_config` | Read / set portal config by path. | read / admin |
+| `get_version` | Portal version + about (capability check). | read |
+| `get_rules` | Show active block-authoring rules. | read |
 
 **Resources** — authoring guidance Claude reads before building, so blocks follow zPortal conventions even if you've never set up a zPortal skill:
 
@@ -162,7 +189,7 @@ Once installed, just talk to Claude. A good first session looks like this:
 
    > "List the datasources on my portal."
 
-   Claude calls `list_datasources` and shows what's available. If you get a credentials error, re-check the three values (see [Troubleshooting](#troubleshooting)).
+   Claude calls `list_resource` with `resource: "datasource"` and shows what's available. If you get a credentials error, re-check the three values (see [Troubleshooting](#troubleshooting)).
 
 2. **Look at real data**
 
@@ -193,8 +220,28 @@ After Claude creates a block, add it to a page in the zPortal page editor as usu
 
 - On first request the server logs in to your portal (`GET /auth/login?api_key=…&user_id=…`) to get a JWT session cookie, and also sends the API key as an `X-Api-Key` header on every call.
 - If the session expires, it re-logs in automatically and retries once.
-- Block reads/writes go through the Portal REST API under `/api/blocks`, `/api/datasources`, and `/api/queries`.
+- Content reads/writes go through the main REST API under `/api/*`; users, groups, permissions, API keys and password changes go through the auth service under `/auth/*`. The same configured base URL serves both.
+- Generic writes follow a full-replace pattern safely: `update_resource` fetches the current record and merges your fields over it, so untouched fields aren't nulled.
 - `create_block` and `update_block` always set `type: "html"` and reject any other type **before** contacting the portal.
+
+---
+
+## Write safety
+
+Every write is tagged with a **risk domain**, and each domain is gated independently:
+
+| Domain | Covers | Default | Enable with |
+|--------|--------|---------|-------------|
+| `content` | blocks, layouts, partials, themes, queries, snippets, translations, dashboards, tags | **on** | (on unless read-only) |
+| `data` | datasources, db_modifications, `run_db_modification` | **off** | `PORTAL_ALLOW_DATA_WRITES=1` |
+| `admin` | users, groups, permissions, access policies, API keys, credentials, system, config, passwords | **off** | `PORTAL_ALLOW_ADMIN_WRITES=1` |
+
+- **`PORTAL_READONLY=1`** disables *every* write regardless of domain — reads and discovery still work.
+- A blocked write returns a clear message naming the flag to set; nothing is sent to the portal.
+- `run_db_modification` additionally requires `confirm: true` on every call.
+- Deletes and password/user mutations are marked **destructive** to MCP clients.
+
+In the Claude Desktop bundle these are toggles in the install dialog (Read-only mode, Allow data writes, Allow admin writes). For other clients, set them as env vars.
 
 ---
 
@@ -204,7 +251,7 @@ After Claude creates a block, add it to a page in the zPortal page editor as usu
 |---------|--------------------|
 | "Missing portal credentials: …" | One of `PORTAL_URL` / `PORTAL_API_KEY` / `PORTAL_USER_ID` is blank. Re-enter it in the bundle's settings (or your client's `env`). |
 | "Portal login failed: HTTP 401/403" | Wrong API key or user ID, or the user lacks permission. Regenerate the key and confirm the user can manage blocks. |
-| `list_queries` says "pre-1.18 … use list_datasources" | Your portal predates the saved-queries API. Use `list_datasources` instead — this is expected, not an error. |
+| `list_resource` (resource: query) says the endpoint isn't available | Your portal predates the saved-queries API (1.18+). Use `list_resource` with `resource: "datasource"` instead — this is expected, not an error. |
 | Tools don't appear in Claude | Reinstall the `.mcpb`, or restart Claude Desktop. For the clone path, make sure `npm run build` succeeded and the `args` path points at `dist/index.js`. |
 | Want to see what it's doing | Set `PORTAL_DEBUG=1` in the server's environment. Debug logs go to **stderr** only. |
 

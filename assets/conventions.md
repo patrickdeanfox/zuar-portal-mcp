@@ -56,6 +56,9 @@ IO helpers it calls.
   and `data` (object of numeric keys → column-value arrays).
 - **Never read `data` directly.** Include a `getQueryData(index)` helper that maps rows
   to `{ column_name: value }` objects, and access values by column name.
+- **Deprecated — do not use** (still found in older blocks): `currentBlock.data`,
+  `currentBlock.columns`, `zPortal.dataSource`, `fetchResults`. They are superseded by
+  `currentBlock.queryResults` + `getQueryData()`.
 - Column names are lowercase_with_underscores and must exactly match the query
   aliases. **Column-name mismatch is the most common cause of an empty block.**
 - Block JS runs once per query load. With multiple queries, check all required indices
@@ -96,8 +99,11 @@ colors. Never hardcode hex/fonts the theme provides.
 | Font | `--font-stack-primary` | `'Roboto', sans-serif` |
 
 Use `var(--token, fallback)`. If you need a color the theme doesn't expose, derive it
-with `color-mix()` from an existing token rather than a fixed hex. Scope all CSS under
-the block's own root id to avoid collisions with other blocks.
+with `color-mix()` from an existing token rather than a fixed hex.
+
+Wrap the block's markup in `<div id="zuar-block-root">…</div>` and scope **all** CSS
+selectors under `#zuar-block-root` to avoid collisions with other blocks on the page
+(this is the established convention across existing blocks).
 
 ## AngularJS $compile footguns
 

@@ -1,10 +1,10 @@
 {
   "manifest_version": "0.3",
   "name": "zuar-portal-mcp-server",
-  "display_name": "Zuar Portal Blocks",
-  "version": "1.0.0",
-  "description": "Create and manage Zuar Portal HTML blocks with Claude.",
-  "long_description": "An MCP server that lets Claude build Zuar Portal (zPortal) HTML blocks for you. It can list, read, create, update, and delete HTML blocks via the Portal REST API, discover datasources and saved queries, and preview sample rows so blocks get wired to real data. Bundled authoring guidance (block structure, currentBlock data access, the amCharts 5 loader pattern) helps Claude produce correct two-field blocks. Only HTML blocks are created or modified.",
+  "display_name": "Zuar Portal",
+  "version": "2.0.0",
+  "description": "Create and manage Zuar Portal blocks, pages, data sources, queries, users and more with Claude.",
+  "long_description": "An MCP server that lets Claude operate a Zuar Portal (zPortal) end to end. Typed, validated tools author HTML blocks; a generic resource layer covers layouts (pages), datasources, queries, db_modifications, partials, themes, users, groups, permissions, access policies, API keys, credentials, snippets, translations, dashboards, tags and system records. Action tools handle sample-row previews, query execution, database modifications, password changes, user group/permission assignment and config. A layered write-safety model keeps low-risk content edits on by default while data (SQL) and admin (users/security) writes stay opt-in.",
   "author": {
     "name": "Patrick Fox"
   },
@@ -19,26 +19,46 @@
       "env": {
         "PORTAL_URL": "${user_config.portal_url}",
         "PORTAL_API_KEY": "${user_config.portal_api_key}",
-        "PORTAL_USER_ID": "${user_config.portal_user_id}"
+        "PORTAL_USER_ID": "${user_config.portal_user_id}",
+        "PORTAL_READONLY": "${user_config.portal_readonly}",
+        "PORTAL_ALLOW_DATA_WRITES": "${user_config.portal_allow_data_writes}",
+        "PORTAL_ALLOW_ADMIN_WRITES": "${user_config.portal_allow_admin_writes}"
       }
     }
   },
   "tools": [
     { "name": "list_blocks", "description": "List blocks on the portal." },
     { "name": "get_block", "description": "Get a block by UUID." },
-    { "name": "create_block", "description": "Create an HTML block." },
-    { "name": "update_block", "description": "Update an HTML block." },
+    { "name": "create_block", "description": "Create an HTML block (validated)." },
+    { "name": "update_block", "description": "Update an HTML block (validated)." },
     { "name": "delete_block", "description": "Delete a block by UUID." },
-    { "name": "list_datasources", "description": "List datasources." },
-    { "name": "list_queries", "description": "List saved queries (Portal 1.18+)." },
-    { "name": "fetch_sample_rows", "description": "Preview rows from a datasource." }
+    { "name": "describe_resource", "description": "Show a resource's fields, verbs, and risk domain." },
+    { "name": "list_resource", "description": "List records of a resource (datasource, layout, query, user, ...)." },
+    { "name": "get_resource", "description": "Get one record of a resource by id." },
+    { "name": "create_resource", "description": "Create a record (write-gated by risk domain)." },
+    { "name": "update_resource", "description": "Update a record (merge over current; write-gated)." },
+    { "name": "delete_resource", "description": "Delete a record (write-gated)." },
+    { "name": "get_rules", "description": "Get active block-authoring rules." },
+    { "name": "get_version", "description": "Get portal version / about info." },
+    { "name": "fetch_sample_rows", "description": "Preview rows from a datasource." },
+    { "name": "execute_query", "description": "Run a saved query by id and return results." },
+    { "name": "run_db_modification", "description": "Run a saved DB write (data writes + confirm required)." },
+    { "name": "change_password", "description": "Change the current user's password (admin writes required)." },
+    { "name": "get_user_groups", "description": "List a user's groups." },
+    { "name": "set_user_groups", "description": "Replace a user's groups (admin writes required)." },
+    { "name": "get_user_permissions", "description": "List a user's permissions." },
+    { "name": "set_user_permissions", "description": "Replace a user's permissions (admin writes required)." },
+    { "name": "get_me", "description": "Get the current user." },
+    { "name": "update_me", "description": "Update the current user's profile (admin writes required)." },
+    { "name": "get_config", "description": "Get the portal config document." },
+    { "name": "update_config", "description": "Set a config value by path (admin writes required)." }
   ],
   "prompts": [
     {
       "name": "create_zportal_block",
       "description": "Guided workflow to build a correct zPortal HTML block.",
       "arguments": ["goal", "datasource_hint"],
-      "text": "Build a Zuar Portal HTML block for: ${arguments.goal}. Datasource hint: ${arguments.datasource_hint}. Read the zportal://guide resources, discover the datasource, then create the block."
+      "text": "Build a Zuar Portal HTML block for: ${arguments.goal}. Datasource hint: ${arguments.datasource_hint}. Read the zportal://guide resources, discover the datasource with list_resource, then create the block."
     }
   ],
   "tools_generated": false,
@@ -70,6 +90,27 @@
       "description": "Your user UUID from zPortal Admin -> Users (copy from the URL).",
       "sensitive": true,
       "required": true
+    },
+    "portal_readonly": {
+      "type": "boolean",
+      "title": "Read-only mode",
+      "description": "Block ALL writes (create/update/delete). Discovery and reads still work.",
+      "required": false,
+      "default": false
+    },
+    "portal_allow_data_writes": {
+      "type": "boolean",
+      "title": "Allow data writes",
+      "description": "Enable datasource and db_modification writes (SQL-bearing). Off by default.",
+      "required": false,
+      "default": false
+    },
+    "portal_allow_admin_writes": {
+      "type": "boolean",
+      "title": "Allow admin writes",
+      "description": "Enable user/group/permission/password/config writes. Off by default.",
+      "required": false,
+      "default": false
     }
   }
 }

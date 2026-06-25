@@ -21,6 +21,67 @@ export interface PortalConfig {
   userId: string;
 }
 
+// ── Write-safety configuration ───────────────────────────────────────────────
+// Every write tool is tagged with a risk domain. Domains gate independently so
+// an operator can enable low-risk content edits while leaving SQL/admin off.
+export type WriteDomain = "content" | "data" | "admin";
+
+export interface SafetyConfig {
+  readOnly: boolean; // PORTAL_READONLY=1 — blocks every write, regardless of domain.
+  allowData: boolean; // PORTAL_ALLOW_DATA_WRITES=1 — datasources, db_modifications, run.
+  allowAdmin: boolean; // PORTAL_ALLOW_ADMIN_WRITES=1 — users, passwords, groups, config, etc.
+}
+
+// Env values that count as "on". Anything else is off (safe default).
+const TRUTHY = new Set(["1", "true", "yes", "on"]);
+
+function envOn(name: string): boolean {
+  const v = process.env[name];
+  return v !== undefined && TRUTHY.has(v.trim().toLowerCase());
+}
+
+// Resolved once per process; safety posture doesn't change mid-run.
+let cachedSafety: SafetyConfig | null = null;
+
+/**
+ * Resolve the write-safety posture from the environment.
+ * Default posture: content writes ON, data + admin writes OFF (opt-in).
+ */
+export function loadSafetyConfig(): SafetyConfig {
+  if (cachedSafety === null) {
+    cachedSafety = {
+      readOnly: envOn("PORTAL_READONLY"),
+      allowData: envOn("PORTAL_ALLOW_DATA_WRITES"),
+      allowAdmin: envOn("PORTAL_ALLOW_ADMIN_WRITES"),
+    };
+  }
+  return cachedSafety;
+}
+
+/**
+ * Decide whether a write in `domain` is permitted. Returns null when allowed,
+ * or an actionable operator-facing message (which env flag to set) when blocked.
+ */
+export function blockReason(domain: WriteDomain): string | null {
+  const s = loadSafetyConfig();
+  if (s.readOnly) {
+    return "Server is in read-only mode (PORTAL_READONLY is set). Unset it to allow writes.";
+  }
+  if (domain === "data" && !s.allowData) {
+    return (
+      "Data writes are disabled. This touches datasources/SQL/db_modifications — " +
+      "set PORTAL_ALLOW_DATA_WRITES=1 to enable them."
+    );
+  }
+  if (domain === "admin" && !s.allowAdmin) {
+    return (
+      "Admin writes are disabled. This touches users/passwords/groups/config — " +
+      "set PORTAL_ALLOW_ADMIN_WRITES=1 to enable them."
+    );
+  }
+  return null;
+}
+
 // ── Logger (stderr only — stdout is reserved for MCP JSON-RPC framing) ────────
 export function log(...args: unknown[]): void {
   if (DEBUG) console.error("[zuar-portal-mcp]", ...args);

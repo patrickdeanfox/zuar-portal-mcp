@@ -1,0 +1,6521 @@
+{
+	"openapi": "3.1.0",
+	"info": {
+		"title": "ZUAR WAF - Authentication",
+		"version": "0.1.0"
+	},
+	"paths": {
+		"/aad_token": {
+			"post": {
+				"summary": "Tableau Connected App Jwt",
+				"operationId": "tableau_connected_app_jwt_aad_token_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/AADTokenJwtRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/about": {
+			"get": {
+				"summary": "About",
+				"description": "Return information about this system",
+				"operationId": "about_about_get",
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/AboutResponse"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/access_policies": {
+			"get": {
+				"summary": "List Access Policies",
+				"operationId": "list_access_policies_access_policies_get",
+				"parameters": [
+					{
+						"name": "project",
+						"in": "query",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "Project"
+						}
+					},
+					{
+						"name": "subjects",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "array",
+									"items": {
+										"type": "string"
+									}
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Subjects"
+						}
+					},
+					{
+						"name": "subject_ids",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "array",
+									"items": {
+										"type": "string"
+									}
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Subject Ids"
+						}
+					},
+					{
+						"name": "resources",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "array",
+									"items": {
+										"type": "string"
+									}
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Resources"
+						}
+					},
+					{
+						"name": "resource_ids",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "array",
+									"items": {
+										"type": "string"
+									}
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Resource Ids"
+						}
+					},
+					{
+						"name": "actions",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "array",
+									"items": {
+										"type": "string"
+									}
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Actions"
+						}
+					},
+					{
+						"name": "access_decisions",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "array",
+									"items": {
+										"type": "string"
+									}
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Access Decisions"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/AccessPolicyListResponseContainer"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"post": {
+				"summary": "Create Access Policy",
+				"operationId": "create_access_policy_access_policies_post",
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/CreateAccessPolicyRequest"
+							}
+						}
+					}
+				},
+				"responses": {
+					"201": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/AccessPolicyResponseContainer"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"delete": {
+				"summary": "Delete Access Policies",
+				"operationId": "delete_access_policies_access_policies_delete",
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/DeleteAccessPoliciesRequest"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"additionalProperties": true,
+									"title": "Response Delete Access Policies Access Policies Delete"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/access_policies/{access_policy_id}": {
+			"get": {
+				"summary": "Retrieve Access Policy",
+				"operationId": "retrieve_access_policy_access_policies__access_policy_id__get",
+				"parameters": [
+					{
+						"name": "access_policy_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "Access Policy Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/AccessPolicyResponseContainer"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"put": {
+				"summary": "Update Access Policy",
+				"operationId": "update_access_policy_access_policies__access_policy_id__put",
+				"parameters": [
+					{
+						"name": "access_policy_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "Access Policy Id"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/UpdateAccessPolicyRequest"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/AccessPolicyResponseContainer"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"delete": {
+				"summary": "Delete Access Policy",
+				"operationId": "delete_access_policy_access_policies__access_policy_id__delete",
+				"parameters": [
+					{
+						"name": "access_policy_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "Access Policy Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/AccessPolicyResponseContainer"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/api_keys": {
+			"get": {
+				"summary": "List Api Keys",
+				"operationId": "list_api_keys_api_keys_get",
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/APIKeyListResponseContainer"
+								}
+							}
+						}
+					}
+				}
+			},
+			"post": {
+				"summary": "Create Api Key",
+				"operationId": "create_api_key_api_keys_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/CreateAPIKeyRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"201": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/CreateAPIKeyResponseContainer"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/api_keys/{api_key_id}": {
+			"delete": {
+				"summary": "Delete Api Key",
+				"operationId": "delete_api_key_api_keys__api_key_id__delete",
+				"parameters": [
+					{
+						"name": "api_key_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "Api Key Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/APIKeyResponseContainer"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/asset_manager/files/{file_path}": {
+			"get": {
+				"summary": "Redirect To File",
+				"operationId": "redirect_to_file_asset_manager_files__file_path__get",
+				"parameters": [
+					{
+						"name": "file_path",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "File Path"
+						}
+					},
+					{
+						"name": "no_content_if_not_exists",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "boolean",
+							"description": "Return 204 status code if file does not exist",
+							"default": false,
+							"title": "No Content If Not Exists"
+						},
+						"description": "Return 204 status code if file does not exist"
+					},
+					{
+						"name": "ignore_permissions",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "boolean",
+							"description": "Ignore permissions (available for admins only)",
+							"default": false,
+							"title": "Ignore Permissions"
+						},
+						"description": "Ignore permissions (available for admins only)"
+					},
+					{
+						"name": "asset_manager_name",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"$ref": "#/components/schemas/AssetManagerName",
+							"description": "Asset manager name",
+							"default": "user"
+						},
+						"description": "Asset manager name"
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"delete": {
+				"summary": "Delete Item",
+				"operationId": "delete_item_asset_manager_files__file_path__delete",
+				"parameters": [
+					{
+						"name": "file_path",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "File Path"
+						}
+					},
+					{
+						"name": "ignore_permissions",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "boolean",
+							"description": "Ignore permissions (available for admins only)",
+							"default": false,
+							"title": "Ignore Permissions"
+						},
+						"description": "Ignore permissions (available for admins only)"
+					},
+					{
+						"name": "no_content_if_not_exists",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "boolean",
+							"description": "Return 204 status code if file does not exist",
+							"default": false,
+							"title": "No Content If Not Exists"
+						},
+						"description": "Return 204 status code if file does not exist"
+					},
+					{
+						"name": "asset_manager_name",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"$ref": "#/components/schemas/AssetManagerName",
+							"description": "Asset manager name",
+							"default": "user"
+						},
+						"description": "Asset manager name"
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/asset_manager/files": {
+			"post": {
+				"summary": "Upload File If Not Exists",
+				"operationId": "upload_file_if_not_exists_asset_manager_files_post",
+				"parameters": [
+					{
+						"name": "ignore_permissions",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "boolean",
+							"description": "Ignore permissions (available for admins only)",
+							"default": false,
+							"title": "Ignore Permissions"
+						},
+						"description": "Ignore permissions (available for admins only)"
+					},
+					{
+						"name": "asset_manager_name",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"$ref": "#/components/schemas/AssetManagerName",
+							"description": "Asset manager name",
+							"default": "user"
+						},
+						"description": "Asset manager name"
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"multipart/form-data": {
+							"schema": {
+								"$ref": "#/components/schemas/Body_upload_file_if_not_exists_asset_manager_files_post"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"additionalProperties": true,
+									"title": "Response Upload File If Not Exists Asset Manager Files Post"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"put": {
+				"summary": "Upload Or Replace File",
+				"operationId": "upload_or_replace_file_asset_manager_files_put",
+				"parameters": [
+					{
+						"name": "ignore_permissions",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "boolean",
+							"description": "Ignore permissions (available for admins only)",
+							"default": false,
+							"title": "Ignore Permissions"
+						},
+						"description": "Ignore permissions (available for admins only)"
+					},
+					{
+						"name": "asset_manager_name",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"$ref": "#/components/schemas/AssetManagerName",
+							"description": "Asset manager name",
+							"default": "user"
+						},
+						"description": "Asset manager name"
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"multipart/form-data": {
+							"schema": {
+								"$ref": "#/components/schemas/Body_upload_or_replace_file_asset_manager_files_put"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"additionalProperties": true,
+									"title": "Response Upload Or Replace File Asset Manager Files Put"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/asset_manager/ls/{directory_path}": {
+			"get": {
+				"summary": "Get Ls",
+				"operationId": "get_ls_asset_manager_ls__directory_path__get",
+				"parameters": [
+					{
+						"name": "directory_path",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "Directory Path"
+						}
+					},
+					{
+						"name": "limit",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "integer",
+									"maximum": 1000,
+									"minimum": 1
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Limit"
+						}
+					},
+					{
+						"name": "next_page_token",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Next Page Token"
+						}
+					},
+					{
+						"name": "types",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "array",
+									"items": {
+										"type": "string"
+									}
+								},
+								{
+									"type": "null"
+								}
+							],
+							"description": "Default: (<LsItemTypeEnum.FILE: 'file'>, <LsItemTypeEnum.DIR: 'dir'>)",
+							"title": "Types"
+						},
+						"description": "Default: (<LsItemTypeEnum.FILE: 'file'>, <LsItemTypeEnum.DIR: 'dir'>)"
+					},
+					{
+						"name": "ignore_permissions",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "boolean",
+							"description": "Ignore permissions (available for admins only)",
+							"default": false,
+							"title": "Ignore Permissions"
+						},
+						"description": "Ignore permissions (available for admins only)"
+					},
+					{
+						"name": "ui",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "boolean",
+							"description": "Show UI instead of JSON response (available only for debug mode)",
+							"default": false,
+							"title": "Ui"
+						},
+						"description": "Show UI instead of JSON response (available only for debug mode)"
+					},
+					{
+						"name": "asset_manager_name",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"$ref": "#/components/schemas/AssetManagerName",
+							"description": "Asset manager name",
+							"default": "user"
+						},
+						"description": "Asset manager name"
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/asset_manager/ls": {
+			"get": {
+				"summary": "Get Ls",
+				"operationId": "get_ls_asset_manager_ls_get",
+				"parameters": [
+					{
+						"name": "directory_path",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "string",
+							"default": "",
+							"title": "Directory Path"
+						}
+					},
+					{
+						"name": "limit",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "integer",
+									"maximum": 1000,
+									"minimum": 1
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Limit"
+						}
+					},
+					{
+						"name": "next_page_token",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Next Page Token"
+						}
+					},
+					{
+						"name": "types",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "array",
+									"items": {
+										"type": "string"
+									}
+								},
+								{
+									"type": "null"
+								}
+							],
+							"description": "Default: (<LsItemTypeEnum.FILE: 'file'>, <LsItemTypeEnum.DIR: 'dir'>)",
+							"title": "Types"
+						},
+						"description": "Default: (<LsItemTypeEnum.FILE: 'file'>, <LsItemTypeEnum.DIR: 'dir'>)"
+					},
+					{
+						"name": "ignore_permissions",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "boolean",
+							"description": "Ignore permissions (available for admins only)",
+							"default": false,
+							"title": "Ignore Permissions"
+						},
+						"description": "Ignore permissions (available for admins only)"
+					},
+					{
+						"name": "ui",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "boolean",
+							"description": "Show UI instead of JSON response (available only for debug mode)",
+							"default": false,
+							"title": "Ui"
+						},
+						"description": "Show UI instead of JSON response (available only for debug mode)"
+					},
+					{
+						"name": "asset_manager_name",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"$ref": "#/components/schemas/AssetManagerName",
+							"description": "Asset manager name",
+							"default": "user"
+						},
+						"description": "Asset manager name"
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/asset_manager/copy": {
+			"post": {
+				"summary": "Copy",
+				"operationId": "copy_asset_manager_copy_post",
+				"parameters": [
+					{
+						"name": "ignore_permissions",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "boolean",
+							"description": "Ignore permissions (available for admins only)",
+							"default": false,
+							"title": "Ignore Permissions"
+						},
+						"description": "Ignore permissions (available for admins only)"
+					},
+					{
+						"name": "asset_manager_name",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"$ref": "#/components/schemas/AssetManagerName",
+							"description": "Asset manager name",
+							"default": "user"
+						},
+						"description": "Asset manager name"
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/AssetManagerMoveCopyRequest"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"additionalProperties": true,
+									"title": "Response Copy Asset Manager Copy Post"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/asset_manager/move": {
+			"post": {
+				"summary": "Move",
+				"operationId": "move_asset_manager_move_post",
+				"parameters": [
+					{
+						"name": "ignore_permissions",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "boolean",
+							"description": "Ignore permissions (available for admins only)",
+							"default": false,
+							"title": "Ignore Permissions"
+						},
+						"description": "Ignore permissions (available for admins only)"
+					},
+					{
+						"name": "asset_manager_name",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"$ref": "#/components/schemas/AssetManagerName",
+							"description": "Asset manager name",
+							"default": "user"
+						},
+						"description": "Asset manager name"
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/AssetManagerMoveCopyRequest"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"additionalProperties": true,
+									"title": "Response Move Asset Manager Move Post"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/asset_manager/search": {
+			"get": {
+				"summary": "Search",
+				"operationId": "search_asset_manager_search_get",
+				"parameters": [
+					{
+						"name": "query",
+						"in": "query",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"minLength": 3,
+							"description": "Search query",
+							"title": "Query"
+						},
+						"description": "Search query"
+					},
+					{
+						"name": "directory_path",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "string",
+							"default": "",
+							"title": "Directory Path"
+						}
+					},
+					{
+						"name": "limit",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "integer",
+									"maximum": 1000,
+									"minimum": 1
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Limit"
+						}
+					},
+					{
+						"name": "next_page_token",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Next Page Token"
+						}
+					},
+					{
+						"name": "types",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "array",
+									"items": {
+										"type": "string"
+									}
+								},
+								{
+									"type": "null"
+								}
+							],
+							"description": "Default: (<LsItemTypeEnum.FILE: 'file'>, <LsItemTypeEnum.DIR: 'dir'>)",
+							"title": "Types"
+						},
+						"description": "Default: (<LsItemTypeEnum.FILE: 'file'>, <LsItemTypeEnum.DIR: 'dir'>)"
+					},
+					{
+						"name": "ignore_permissions",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "boolean",
+							"description": "Ignore permissions (available for admins only)",
+							"default": false,
+							"title": "Ignore Permissions"
+						},
+						"description": "Ignore permissions (available for admins only)"
+					},
+					{
+						"name": "asset_manager_name",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"$ref": "#/components/schemas/AssetManagerName",
+							"description": "Asset manager name",
+							"default": "user"
+						},
+						"description": "Asset manager name"
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/DirPageDict"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/config": {
+			"get": {
+				"summary": "Config Controller",
+				"description": "Get system configuration information",
+				"operationId": "config_controller_config_get",
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"additionalProperties": true,
+									"type": "object",
+									"title": "Response Config Controller Config Get"
+								}
+							}
+						}
+					}
+				}
+			},
+			"put": {
+				"summary": "Update Config",
+				"operationId": "update_config_config_put",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/ConfigRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/groups": {
+			"get": {
+				"summary": "List Groups",
+				"description": "Return all groups",
+				"operationId": "list_groups_groups_get",
+				"parameters": [
+					{
+						"name": "sort",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"$ref": "#/components/schemas/GroupSortField",
+							"default": "name"
+						}
+					},
+					{
+						"name": "desc",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "boolean",
+							"default": false,
+							"title": "Desc"
+						}
+					},
+					{
+						"name": "search",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Search"
+						}
+					},
+					{
+						"name": "ids",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "array",
+									"items": {
+										"type": "string",
+										"format": "uuid"
+									}
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Ids"
+						}
+					},
+					{
+						"name": "source",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"$ref": "#/components/schemas/GroupSourceFilter"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Source"
+						}
+					},
+					{
+						"name": "limit",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "integer",
+							"exclusiveMinimum": 0,
+							"default": 50,
+							"title": "Limit"
+						}
+					},
+					{
+						"name": "offset",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "integer",
+							"minimum": 0,
+							"default": 0,
+							"title": "Offset"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/GroupFetchResponse"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"post": {
+				"summary": "Create Group",
+				"description": "Create a new group",
+				"operationId": "create_group_groups_post",
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/GroupRequest"
+							}
+						}
+					}
+				},
+				"responses": {
+					"201": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/GroupResponse"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/groups/{group_id}": {
+			"get": {
+				"summary": "Retrieve Group",
+				"description": "Get a group by UUID",
+				"operationId": "retrieve_group_groups__group_id__get",
+				"parameters": [
+					{
+						"name": "group_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "Group Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/GroupResponse"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"put": {
+				"summary": "Update Group",
+				"description": "Update a group by UUID",
+				"operationId": "update_group_groups__group_id__put",
+				"parameters": [
+					{
+						"name": "group_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "Group Id"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/GroupRequest"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/GroupResponse"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"delete": {
+				"summary": "Delete Group",
+				"description": "Delete an existing group by UUID",
+				"operationId": "delete_group_groups__group_id__delete",
+				"parameters": [
+					{
+						"name": "group_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "Group Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/GroupResponse"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/groups/{group_id}/permissions": {
+			"get": {
+				"summary": "List Group Permissions",
+				"description": "List the permissions for the given group",
+				"operationId": "list_group_permissions_groups__group_id__permissions_get",
+				"parameters": [
+					{
+						"name": "group_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "Group Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"additionalProperties": true
+									},
+									"title": "Response List Group Permissions Groups  Group Id  Permissions Get"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"post": {
+				"summary": "Grant Group Permission",
+				"description": "Add an existing permission to a given user.",
+				"operationId": "grant_group_permission_groups__group_id__permissions_post",
+				"parameters": [
+					{
+						"name": "group_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "Group Id"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/GrantPermissionRequest"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"$ref": "#/components/schemas/PermissionResponse"
+									},
+									"title": "Response Grant Group Permission Groups  Group Id  Permissions Post"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/groups/{group_id}/permissions/{permission_id}": {
+			"delete": {
+				"summary": "Revoke Group Permission",
+				"description": "Take away a user permission",
+				"operationId": "revoke_group_permission_groups__group_id__permissions__permission_id__delete",
+				"parameters": [
+					{
+						"name": "permission_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "Permission Id"
+						}
+					},
+					{
+						"name": "group_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "Group Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"$ref": "#/components/schemas/PermissionResponse"
+									},
+									"title": "Response Revoke Group Permission Groups  Group Id  Permissions  Permission Id  Delete"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/login": {
+			"get": {
+				"summary": "Login Get",
+				"description": "Login form",
+				"operationId": "login_get_login_get",
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {}
+							}
+						}
+					}
+				}
+			},
+			"post": {
+				"summary": "Login Post",
+				"description": "Login handler",
+				"operationId": "login_post_login_post",
+				"requestBody": {
+					"content": {
+						"application/x-www-form-urlencoded": {
+							"schema": {
+								"$ref": "#/components/schemas/Body_login_post_login_post"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/logout": {
+			"get": {
+				"summary": "Logout",
+				"operationId": "logout_logout_get",
+				"responses": {
+					"303": {
+						"description": "Successful Response"
+					}
+				}
+			},
+			"post": {
+				"summary": "Logout",
+				"operationId": "logout_logout_post",
+				"responses": {
+					"303": {
+						"description": "Successful Response"
+					}
+				}
+			}
+		},
+		"/me": {
+			"get": {
+				"summary": "Get Me",
+				"description": "Get currently logged in user.",
+				"operationId": "get_me_me_get",
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/UserResponse"
+								}
+							}
+						}
+					}
+				}
+			},
+			"patch": {
+				"summary": "Update Me",
+				"description": "Update currently logged in user.",
+				"operationId": "update_me_me_patch",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/MeUpdateRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/UserResponse"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/openidc/redirect": {
+			"get": {
+				"summary": "Openidc Redirect",
+				"description": "Build a redirect for the OP",
+				"operationId": "openidc_redirect_openidc_redirect_get",
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/openidc/authorize": {
+			"get": {
+				"summary": "Openidc Authorize",
+				"description": "Handle the POST request back from the OP",
+				"operationId": "openidc_authorize_openidc_authorize_get",
+				"parameters": [
+					{
+						"name": "code",
+						"in": "query",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "Code"
+						}
+					},
+					{
+						"name": "state",
+						"in": "query",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "State"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/passwd": {
+			"post": {
+				"summary": "Change Password",
+				"description": "Change an existing user's password",
+				"operationId": "change_password_passwd_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/ChangePasswordRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/UserResponse"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/forgot-password": {
+			"get": {
+				"summary": "Forgot Password Get Endpoint",
+				"operationId": "forgot_password_get_endpoint_forgot_password_get",
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {}
+							}
+						}
+					}
+				}
+			},
+			"post": {
+				"summary": "Forgot Password Endpoint",
+				"description": "Change an existing user's password",
+				"operationId": "forgot_password_endpoint_forgot_password_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/ForgotPasswordRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"additionalProperties": true,
+									"type": "object",
+									"title": "Response Forgot Password Endpoint Forgot Password Post"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/reset-password": {
+			"get": {
+				"summary": "Reset Password Get Endpoint",
+				"operationId": "reset_password_get_endpoint_reset_password_get",
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {}
+							}
+						}
+					}
+				}
+			},
+			"post": {
+				"summary": "Reset Password Endpoint",
+				"operationId": "reset_password_endpoint_reset_password_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/ResetPasswordRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"additionalProperties": true,
+									"type": "object",
+									"title": "Response Reset Password Endpoint Reset Password Post"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/permissions": {
+			"get": {
+				"summary": "List Permissions",
+				"description": "Return all permissions",
+				"operationId": "list_permissions_permissions_get",
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"items": {
+										"$ref": "#/components/schemas/PermissionResponse"
+									},
+									"type": "array",
+									"title": "Response List Permissions Permissions Get"
+								}
+							}
+						}
+					}
+				}
+			},
+			"post": {
+				"summary": "Create Permission",
+				"description": "Create a new permission",
+				"operationId": "create_permission_permissions_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/CreatePermissionRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"201": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PermissionResponse"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/permissions/{permission_id}": {
+			"get": {
+				"summary": "Retrieve Permission",
+				"description": "Get a permission by UUID",
+				"operationId": "retrieve_permission_permissions__permission_id__get",
+				"parameters": [
+					{
+						"name": "permission_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "Permission Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PermissionResponse"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"put": {
+				"summary": "Update Permission",
+				"description": "Update a permission by UUID",
+				"operationId": "update_permission_permissions__permission_id__put",
+				"parameters": [
+					{
+						"name": "permission_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "Permission Id"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/UpdatePermissionRequest"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PermissionResponse"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"delete": {
+				"summary": "Delete Permission",
+				"description": "Delete an existing permission by UUID",
+				"operationId": "delete_permission_permissions__permission_id__delete",
+				"parameters": [
+					{
+						"name": "permission_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "Permission Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PermissionResponse"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/saml/sso": {
+			"get": {
+				"summary": "Saml Sso Login",
+				"description": "Redirect user to IDP login page",
+				"operationId": "saml_sso_login_saml_sso_get",
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {}
+							}
+						}
+					}
+				}
+			},
+			"post": {
+				"summary": "Saml Sso Login Response",
+				"description": "Handle IDP login response and login user",
+				"operationId": "saml_sso_login_response_saml_sso_post",
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/saml/slo": {
+			"get": {
+				"summary": "Saml Slo Login Response",
+				"operationId": "saml_slo_login_response_saml_slo_get",
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {}
+							}
+						}
+					}
+				}
+			},
+			"post": {
+				"summary": "Saml Slo Login Response",
+				"operationId": "saml_slo_login_response_saml_slo_post",
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/scim/v2/Schemas": {
+			"get": {
+				"summary": "List Schemas",
+				"operationId": "list_schemas_scim_v2_Schemas_get",
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"additionalProperties": true,
+									"type": "object",
+									"title": "Response List Schemas Scim V2 Schemas Get"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/scim/v2/Schemas/{schema_id}": {
+			"get": {
+				"summary": "Get Schema",
+				"operationId": "get_schema_scim_v2_Schemas__schema_id__get",
+				"parameters": [
+					{
+						"name": "schema_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "Schema Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"additionalProperties": true,
+									"title": "Response Get Schema Scim V2 Schemas  Schema Id  Get"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/scim/v2/Users": {
+			"get": {
+				"summary": "List Users",
+				"operationId": "list_users_scim_v2_Users_get",
+				"parameters": [
+					{
+						"name": "startIndex",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "integer",
+							"minimum": 1,
+							"default": 1,
+							"title": "Startindex"
+						}
+					},
+					{
+						"name": "count",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "integer",
+							"exclusiveMinimum": 0,
+							"default": 10,
+							"title": "Count"
+						}
+					},
+					{
+						"name": "filter",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Filter"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"additionalProperties": true,
+									"title": "Response List Users Scim V2 Users Get"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"post": {
+				"summary": "Create User",
+				"operationId": "create_user_scim_v2_Users_post",
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"additionalProperties": true,
+									"title": "Response Create User Scim V2 Users Post"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/scim/v2/Users/{user_id_or_username}": {
+			"get": {
+				"summary": "Get User",
+				"operationId": "get_user_scim_v2_Users__user_id_or_username__get",
+				"parameters": [
+					{
+						"name": "user_id_or_username",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "User Id Or Username"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"additionalProperties": true,
+									"title": "Response Get User Scim V2 Users  User Id Or Username  Get"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"put": {
+				"summary": "Replace User",
+				"operationId": "replace_user_scim_v2_Users__user_id_or_username__put",
+				"parameters": [
+					{
+						"name": "user_id_or_username",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "User Id Or Username"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"additionalProperties": true,
+									"title": "Response Replace User Scim V2 Users  User Id Or Username  Put"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"patch": {
+				"summary": "Update User",
+				"operationId": "update_user_scim_v2_Users__user_id_or_username__patch",
+				"parameters": [
+					{
+						"name": "user_id_or_username",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "User Id Or Username"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"additionalProperties": true,
+									"title": "Response Update User Scim V2 Users  User Id Or Username  Patch"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"delete": {
+				"summary": "Delete User",
+				"operationId": "delete_user_scim_v2_Users__user_id_or_username__delete",
+				"parameters": [
+					{
+						"name": "user_id_or_username",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "User Id Or Username"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"additionalProperties": true,
+									"title": "Response Delete User Scim V2 Users  User Id Or Username  Delete"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/scim/v2/Groups": {
+			"get": {
+				"summary": "List Groups",
+				"operationId": "list_groups_scim_v2_Groups_get",
+				"parameters": [
+					{
+						"name": "filter",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Filter"
+						}
+					},
+					{
+						"name": "startIndex",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "integer",
+							"minimum": 1,
+							"default": 1,
+							"title": "Startindex"
+						}
+					},
+					{
+						"name": "count",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "integer",
+							"exclusiveMinimum": 0,
+							"default": 10,
+							"title": "Count"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"anyOf": [
+										{
+											"type": "object",
+											"additionalProperties": true
+										},
+										{
+											"type": "array",
+											"items": {}
+										}
+									],
+									"title": "Response List Groups Scim V2 Groups Get"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"post": {
+				"summary": "Create Group",
+				"operationId": "create_group_scim_v2_Groups_post",
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"additionalProperties": true,
+									"title": "Response Create Group Scim V2 Groups Post"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/scim/v2/Groups/{group_id}": {
+			"get": {
+				"summary": "Get Group",
+				"operationId": "get_group_scim_v2_Groups__group_id__get",
+				"parameters": [
+					{
+						"name": "group_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "Group Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"additionalProperties": true,
+									"title": "Response Get Group Scim V2 Groups  Group Id  Get"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"patch": {
+				"summary": "Update Group",
+				"operationId": "update_group_scim_v2_Groups__group_id__patch",
+				"parameters": [
+					{
+						"name": "group_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "Group Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"additionalProperties": true,
+									"title": "Response Update Group Scim V2 Groups  Group Id  Patch"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"delete": {
+				"summary": "Delete Group",
+				"operationId": "delete_group_scim_v2_Groups__group_id__delete",
+				"parameters": [
+					{
+						"name": "group_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "Group Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"additionalProperties": true,
+									"title": "Response Delete Group Scim V2 Groups  Group Id  Delete"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/signed": {
+			"post": {
+				"summary": "Signed",
+				"description": "Return information about this system",
+				"operationId": "signed_signed_post",
+				"requestBody": {
+					"content": {
+						"application/x-www-form-urlencoded": {
+							"schema": {
+								"$ref": "#/components/schemas/Body_signed_signed_post"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/subscriptions": {
+			"get": {
+				"summary": "List Subscription",
+				"description": "Return all subscriptions for the current",
+				"operationId": "list_subscription_subscriptions_get",
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"items": {
+										"additionalProperties": true,
+										"type": "object"
+									},
+									"type": "array",
+									"title": "Response List Subscription Subscriptions Get"
+								}
+							}
+						}
+					}
+				}
+			},
+			"post": {
+				"summary": "Create Subscription",
+				"description": "Create a new subscription",
+				"operationId": "create_subscription_subscriptions_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/SubscriptionRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"201": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"additionalProperties": true,
+									"type": "object",
+									"title": "Response Create Subscription Subscriptions Post"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/subscriptions/{subscription_id}": {
+			"get": {
+				"summary": "Retrieve Subscription",
+				"description": "Get a subscription by UUID",
+				"operationId": "retrieve_subscription_subscriptions__subscription_id__get",
+				"parameters": [
+					{
+						"name": "subscription_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "Subscription Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"additionalProperties": true,
+									"title": "Response Retrieve Subscription Subscriptions  Subscription Id  Get"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"delete": {
+				"summary": "Delete User",
+				"description": "Delete an existing subscription by UUID",
+				"operationId": "delete_user_subscriptions__subscription_id__delete",
+				"parameters": [
+					{
+						"name": "subscription_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "Subscription Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"additionalProperties": true,
+									"title": "Response Delete User Subscriptions  Subscription Id  Delete"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/subscriptions_ng": {
+			"get": {
+				"summary": "List Subscription",
+				"description": "Return all subscriptions for the current",
+				"operationId": "list_subscription_subscriptions_ng_get",
+				"parameters": [
+					{
+						"name": "user_ids",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "array",
+									"items": {
+										"type": "string",
+										"format": "uuid"
+									}
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "User Ids"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"post": {
+				"summary": "Create Subscription",
+				"description": "Create a new subscription",
+				"operationId": "create_subscription_subscriptions_ng_post",
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/CreateSubscriptionNgRequest"
+							}
+						}
+					}
+				},
+				"responses": {
+					"201": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"additionalProperties": true,
+									"title": "Response Create Subscription Subscriptions Ng Post"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/subscriptions_ng/{subscription_id}": {
+			"get": {
+				"summary": "Retrieve Subscription",
+				"description": "Get a subscription by UUID",
+				"operationId": "retrieve_subscription_subscriptions_ng__subscription_id__get",
+				"parameters": [
+					{
+						"name": "subscription_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "Subscription Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"additionalProperties": true,
+									"title": "Response Retrieve Subscription Subscriptions Ng  Subscription Id  Get"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"delete": {
+				"summary": "Delete User",
+				"description": "Delete an existing subscription by UUID",
+				"operationId": "delete_user_subscriptions_ng__subscription_id__delete",
+				"parameters": [
+					{
+						"name": "subscription_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "Subscription Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"additionalProperties": true,
+									"title": "Response Delete User Subscriptions Ng  Subscription Id  Delete"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/tableau/connected_app_jwt": {
+			"post": {
+				"summary": "Tableau Connected App Jwt",
+				"operationId": "tableau_connected_app_jwt_tableau_connected_app_jwt_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/TableauConnectedAppJwtRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/JwtResponse"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/tableau_connected_app_jwt": {
+			"post": {
+				"summary": "(deprecated route)",
+				"operationId": "tableau_connected_app_jwt_tableau_connected_app_jwt_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/TableauConnectedAppJwtRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/JwtResponse"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				},
+				"deprecated": true
+			}
+		},
+		"/tableau/rest_token": {
+			"post": {
+				"summary": "Tableau Rest Token",
+				"operationId": "tableau_rest_token_tableau_rest_token_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/TableauRestTokenRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/tableau_rest_token": {
+			"post": {
+				"summary": "(deprecated route)",
+				"operationId": "tableau_rest_token_tableau_rest_token_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/TableauRestTokenRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				},
+				"deprecated": true
+			}
+		},
+		"/tableau/api_proxy/{tableau_path}": {
+			"post": {
+				"summary": "Proxy Endpoint",
+				"operationId": "proxy_endpoint_tableau_api_proxy__tableau_path__post",
+				"parameters": [
+					{
+						"name": "tableau_path",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "Tableau Path"
+						}
+					},
+					{
+						"name": "x-portal-tableau-scopes",
+						"in": "header",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "X-Portal-Tableau-Scopes"
+						}
+					}
+				],
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"anyOf": [
+									{
+										"type": "string"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"title": "Body"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"patch": {
+				"summary": "Proxy Endpoint",
+				"operationId": "proxy_endpoint_tableau_api_proxy__tableau_path__post",
+				"parameters": [
+					{
+						"name": "tableau_path",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "Tableau Path"
+						}
+					},
+					{
+						"name": "x-portal-tableau-scopes",
+						"in": "header",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "X-Portal-Tableau-Scopes"
+						}
+					}
+				],
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"anyOf": [
+									{
+										"type": "string"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"title": "Body"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"get": {
+				"summary": "Proxy Endpoint",
+				"operationId": "proxy_endpoint_tableau_api_proxy__tableau_path__post",
+				"parameters": [
+					{
+						"name": "tableau_path",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "Tableau Path"
+						}
+					},
+					{
+						"name": "x-portal-tableau-scopes",
+						"in": "header",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "X-Portal-Tableau-Scopes"
+						}
+					}
+				],
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"anyOf": [
+									{
+										"type": "string"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"title": "Body"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"delete": {
+				"summary": "Proxy Endpoint",
+				"operationId": "proxy_endpoint_tableau_api_proxy__tableau_path__post",
+				"parameters": [
+					{
+						"name": "tableau_path",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "Tableau Path"
+						}
+					},
+					{
+						"name": "x-portal-tableau-scopes",
+						"in": "header",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "X-Portal-Tableau-Scopes"
+						}
+					}
+				],
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"anyOf": [
+									{
+										"type": "string"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"title": "Body"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"put": {
+				"summary": "Proxy Endpoint",
+				"operationId": "proxy_endpoint_tableau_api_proxy__tableau_path__post",
+				"parameters": [
+					{
+						"name": "tableau_path",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "Tableau Path"
+						}
+					},
+					{
+						"name": "x-portal-tableau-scopes",
+						"in": "header",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "X-Portal-Tableau-Scopes"
+						}
+					}
+				],
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"anyOf": [
+									{
+										"type": "string"
+									},
+									{
+										"type": "null"
+									}
+								],
+								"title": "Body"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/users": {
+			"get": {
+				"summary": "List Users",
+				"description": "Return all users",
+				"operationId": "list_users_users_get",
+				"parameters": [
+					{
+						"name": "search",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Search"
+						}
+					},
+					{
+						"name": "source",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"$ref": "#/components/schemas/UserSourceFilter"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Source"
+						}
+					},
+					{
+						"name": "sort",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"$ref": "#/components/schemas/UserSortFields"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Sort"
+						}
+					},
+					{
+						"name": "desc",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "boolean",
+							"default": false,
+							"title": "Desc"
+						}
+					},
+					{
+						"name": "limit",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "integer",
+							"exclusiveMinimum": 0,
+							"default": 50,
+							"title": "Limit"
+						}
+					},
+					{
+						"name": "offset",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "integer",
+							"minimum": 0,
+							"default": 0,
+							"title": "Offset"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/UserFetchResponse"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"post": {
+				"summary": "Create User",
+				"description": "Create a new user",
+				"operationId": "create_user_users_post",
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/CreateUserRequest"
+							}
+						}
+					}
+				},
+				"responses": {
+					"201": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/UserResponse"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/users/{user_id}": {
+			"get": {
+				"summary": "Retrieve User",
+				"description": "Get a user by UUID",
+				"operationId": "retrieve_user_users__user_id__get",
+				"parameters": [
+					{
+						"name": "user_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "User Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/UserResponse"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"put": {
+				"summary": "Update User",
+				"description": "Update a user by UUID",
+				"operationId": "update_user_users__user_id__put",
+				"parameters": [
+					{
+						"name": "user_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "User Id"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/UpdateUserRequest"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/UserResponse"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"delete": {
+				"summary": "Delete User",
+				"description": "Delete an existing user by UUID",
+				"operationId": "delete_user_users__user_id__delete",
+				"parameters": [
+					{
+						"name": "user_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "User Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/UserResponse"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/users/{user_id}/permissions": {
+			"get": {
+				"summary": "List User Permissions",
+				"description": "List all the permissions for the given user",
+				"operationId": "list_user_permissions_users__user_id__permissions_get",
+				"parameters": [
+					{
+						"name": "user_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "User Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"$ref": "#/components/schemas/PermissionResponse"
+									},
+									"title": "Response List User Permissions Users  User Id  Permissions Get"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"post": {
+				"summary": "Grant User Permission",
+				"description": "Add an existing permission to a given user.",
+				"operationId": "grant_user_permission_users__user_id__permissions_post",
+				"parameters": [
+					{
+						"name": "user_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "User Id"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/GrantPermissionRequest"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"$ref": "#/components/schemas/PermissionResponse"
+									},
+									"title": "Response Grant User Permission Users  User Id  Permissions Post"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"put": {
+				"summary": "Set User Permissions",
+				"description": "Replace the permissions for a given user.",
+				"operationId": "set_user_permissions_users__user_id__permissions_put",
+				"parameters": [
+					{
+						"name": "user_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "User Id"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/SetPermissionsRequest"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"$ref": "#/components/schemas/PermissionResponse"
+									},
+									"title": "Response Set User Permissions Users  User Id  Permissions Put"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/users/{user_id}/permissions/{permission_id}": {
+			"delete": {
+				"summary": "Revoke User Permission",
+				"description": "Take away a user permission",
+				"operationId": "revoke_user_permission_users__user_id__permissions__permission_id__delete",
+				"parameters": [
+					{
+						"name": "permission_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "Permission Id"
+						}
+					},
+					{
+						"name": "user_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "User Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"$ref": "#/components/schemas/PermissionResponse"
+									},
+									"title": "Response Revoke User Permission Users  User Id  Permissions  Permission Id  Delete"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/users/{user_id}/groups": {
+			"get": {
+				"summary": "List User Groups",
+				"description": "List all the permissions for the given user",
+				"operationId": "list_user_groups_users__user_id__groups_get",
+				"parameters": [
+					{
+						"name": "user_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "User Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"$ref": "#/components/schemas/GroupResponse"
+									},
+									"title": "Response List User Groups Users  User Id  Groups Get"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"post": {
+				"summary": "Add User Group",
+				"description": "Add an existing permission to a given user.",
+				"operationId": "add_user_group_users__user_id__groups_post",
+				"parameters": [
+					{
+						"name": "user_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "User Id"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/AddGroupRequest"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"$ref": "#/components/schemas/GroupResponse"
+									},
+									"title": "Response Add User Group Users  User Id  Groups Post"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"put": {
+				"summary": "Set User Groups",
+				"description": "Set the groups for a given user.",
+				"operationId": "set_user_groups_users__user_id__groups_put",
+				"parameters": [
+					{
+						"name": "user_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "User Id"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/SetGroupsRequest"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"$ref": "#/components/schemas/GroupResponse"
+									},
+									"title": "Response Set User Groups Users  User Id  Groups Put"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/users/{user_id}/groups/{group_id}": {
+			"delete": {
+				"summary": "Remove User Group",
+				"description": "Take away a user group",
+				"operationId": "remove_user_group_users__user_id__groups__group_id__delete",
+				"parameters": [
+					{
+						"name": "group_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "Group Id"
+						}
+					},
+					{
+						"name": "user_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "User Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"$ref": "#/components/schemas/GroupResponse"
+									},
+									"title": "Response Remove User Group Users  User Id  Groups  Group Id  Delete"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/vaulted": {
+			"post": {
+				"summary": "Vaulted",
+				"description": "Vault handler",
+				"operationId": "vaulted_vaulted_post",
+				"requestBody": {
+					"content": {
+						"application/x-www-form-urlencoded": {
+							"schema": {
+								"$ref": "#/components/schemas/Body_vaulted_vaulted_post"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/version": {
+			"get": {
+				"summary": "Get Version",
+				"operationId": "get_version_version_get",
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/VersionResponse"
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	},
+	"components": {
+		"schemas": {
+			"AADTokenJwtRequest": {
+				"properties": {
+					"scope": {
+						"items": {
+							"type": "string"
+						},
+						"type": "array",
+						"title": "Scope",
+						"default": []
+					}
+				},
+				"type": "object",
+				"title": "AADTokenJwtRequest",
+				"description": "User request model"
+			},
+			"APIKeyListResponseContainer": {
+				"properties": {
+					"data": {
+						"items": {
+							"$ref": "#/components/schemas/APIKeyResponse"
+						},
+						"type": "array",
+						"title": "Data"
+					}
+				},
+				"type": "object",
+				"required": [
+					"data"
+				],
+				"title": "APIKeyListResponseContainer"
+			},
+			"APIKeyResponse": {
+				"properties": {
+					"id": {
+						"type": "string",
+						"format": "uuid",
+						"title": "Id"
+					},
+					"name": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Name"
+					},
+					"user_id": {
+						"type": "string",
+						"format": "uuid",
+						"title": "User Id"
+					},
+					"created_at": {
+						"type": "string",
+						"format": "date-time",
+						"title": "Created At"
+					}
+				},
+				"type": "object",
+				"required": [
+					"id",
+					"user_id",
+					"created_at"
+				],
+				"title": "APIKeyResponse"
+			},
+			"APIKeyResponseContainer": {
+				"properties": {
+					"data": {
+						"$ref": "#/components/schemas/APIKeyResponse"
+					}
+				},
+				"type": "object",
+				"required": [
+					"data"
+				],
+				"title": "APIKeyResponseContainer"
+			},
+			"AboutResponse": {
+				"properties": {
+					"payload": {
+						"$ref": "#/components/schemas/Payload"
+					},
+					"debug": {
+						"type": "boolean",
+						"title": "Debug"
+					},
+					"database_url": {
+						"type": "string",
+						"title": "Database Url"
+					},
+					"token_expiry": {
+						"type": "integer",
+						"title": "Token Expiry"
+					},
+					"tableau_server": {
+						"anyOf": [
+							{
+								"$ref": "#/components/schemas/TableauServer"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"target_database_url": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Target Database Url"
+					}
+				},
+				"type": "object",
+				"required": [
+					"payload",
+					"debug",
+					"database_url",
+					"token_expiry"
+				],
+				"title": "AboutResponse",
+				"description": "About response model "
+			},
+			"AccessPolicyListResponseContainer": {
+				"properties": {
+					"data": {
+						"items": {
+							"$ref": "#/components/schemas/AccessPolicyResponse"
+						},
+						"type": "array",
+						"title": "Data"
+					}
+				},
+				"type": "object",
+				"required": [
+					"data"
+				],
+				"title": "AccessPolicyListResponseContainer"
+			},
+			"AccessPolicyResponse": {
+				"properties": {
+					"id": {
+						"type": "string",
+						"format": "uuid",
+						"title": "Id"
+					},
+					"project": {
+						"type": "string",
+						"maxLength": 255,
+						"title": "Project"
+					},
+					"subject": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Subject"
+					},
+					"subject_id": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Subject Id"
+					},
+					"resource": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Resource"
+					},
+					"resource_id": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Resource Id"
+					},
+					"action": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Action"
+					},
+					"access_decision": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 16
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Access Decision"
+					},
+					"updated_at": {
+						"type": "string",
+						"format": "date-time",
+						"title": "Updated At"
+					},
+					"created_at": {
+						"type": "string",
+						"format": "date-time",
+						"title": "Created At"
+					}
+				},
+				"type": "object",
+				"required": [
+					"id",
+					"project",
+					"updated_at",
+					"created_at"
+				],
+				"title": "AccessPolicyResponse"
+			},
+			"AccessPolicyResponseContainer": {
+				"properties": {
+					"data": {
+						"$ref": "#/components/schemas/AccessPolicyResponse"
+					}
+				},
+				"type": "object",
+				"required": [
+					"data"
+				],
+				"title": "AccessPolicyResponseContainer"
+			},
+			"AddGroupRequest": {
+				"properties": {
+					"group_id": {
+						"type": "string",
+						"format": "uuid",
+						"title": "Group Id"
+					}
+				},
+				"type": "object",
+				"required": [
+					"group_id"
+				],
+				"title": "AddGroupRequest",
+				"description": "Add group request model "
+			},
+			"AssetManagerMoveCopyRequest": {
+				"properties": {
+					"source_path": {
+						"type": "string",
+						"title": "Source Path"
+					},
+					"destination_path": {
+						"type": "string",
+						"title": "Destination Path"
+					}
+				},
+				"type": "object",
+				"required": [
+					"source_path",
+					"destination_path"
+				],
+				"title": "AssetManagerMoveCopyRequest"
+			},
+			"AssetManagerName": {
+				"type": "string",
+				"enum": [
+					"user",
+					"system"
+				],
+				"title": "AssetManagerName"
+			},
+			"Body_login_post_login_post": {
+				"properties": {
+					"username": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Username"
+					},
+					"password": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Password"
+					},
+					"location": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Location"
+					}
+				},
+				"type": "object",
+				"title": "Body_login_post_login_post"
+			},
+			"Body_signed_signed_post": {
+				"properties": {
+					"signed_request": {
+						"type": "string",
+						"title": "Signed Request"
+					}
+				},
+				"type": "object",
+				"required": [
+					"signed_request"
+				],
+				"title": "Body_signed_signed_post"
+			},
+			"Body_upload_file_if_not_exists_asset_manager_files_post": {
+				"properties": {
+					"file": {
+						"type": "string",
+						"contentMediaType": "application/octet-stream",
+						"title": "File"
+					}
+				},
+				"type": "object",
+				"required": [
+					"file"
+				],
+				"title": "Body_upload_file_if_not_exists_asset_manager_files_post"
+			},
+			"Body_upload_or_replace_file_asset_manager_files_put": {
+				"properties": {
+					"file": {
+						"type": "string",
+						"contentMediaType": "application/octet-stream",
+						"title": "File"
+					}
+				},
+				"type": "object",
+				"required": [
+					"file"
+				],
+				"title": "Body_upload_or_replace_file_asset_manager_files_put"
+			},
+			"Body_vaulted_vaulted_post": {
+				"properties": {
+					"signed_request": {
+						"type": "string",
+						"title": "Signed Request"
+					}
+				},
+				"type": "object",
+				"required": [
+					"signed_request"
+				],
+				"title": "Body_vaulted_vaulted_post"
+			},
+			"ChangePasswordRequest": {
+				"properties": {
+					"old_password": {
+						"type": "string",
+						"maxLength": 255,
+						"title": "Old Password"
+					},
+					"new_password": {
+						"type": "string",
+						"maxLength": 255,
+						"title": "New Password"
+					}
+				},
+				"type": "object",
+				"required": [
+					"old_password",
+					"new_password"
+				],
+				"title": "ChangePasswordRequest",
+				"description": "User request model "
+			},
+			"ConfigRequest": {
+				"properties": {
+					"path": {
+						"items": {
+							"type": "string"
+						},
+						"type": "array",
+						"title": "Path"
+					},
+					"value": {
+						"anyOf": [
+							{
+								"additionalProperties": true,
+								"type": "object"
+							},
+							{
+								"items": {},
+								"type": "array"
+							},
+							{
+								"type": "boolean"
+							},
+							{
+								"type": "integer"
+							},
+							{
+								"type": "number"
+							},
+							{
+								"type": "string"
+							}
+						],
+						"title": "Value"
+					},
+					"merge": {
+						"type": "boolean",
+						"title": "Merge",
+						"default": false
+					},
+					"config_collection": {
+						"type": "string",
+						"title": "Config Collection",
+						"default": "local"
+					},
+					"config_name": {
+						"type": "string",
+						"title": "Config Name",
+						"default": "00_local_config.yml"
+					},
+					"if_not_exist": {
+						"type": "boolean",
+						"title": "If Not Exist",
+						"default": false
+					}
+				},
+				"type": "object",
+				"required": [
+					"path",
+					"value"
+				],
+				"title": "ConfigRequest"
+			},
+			"CreateAPIKey": {
+				"properties": {
+					"user_id": {
+						"type": "string",
+						"format": "uuid",
+						"title": "User Id"
+					},
+					"name": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Name"
+					}
+				},
+				"type": "object",
+				"required": [
+					"user_id"
+				],
+				"title": "CreateAPIKey"
+			},
+			"CreateAPIKeyRequest": {
+				"properties": {
+					"data": {
+						"$ref": "#/components/schemas/CreateAPIKey"
+					}
+				},
+				"type": "object",
+				"required": [
+					"data"
+				],
+				"title": "CreateAPIKeyRequest"
+			},
+			"CreateAPIKeyResponse": {
+				"properties": {
+					"id": {
+						"type": "string",
+						"format": "uuid",
+						"title": "Id"
+					},
+					"name": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Name"
+					},
+					"key": {
+						"type": "string",
+						"title": "Key"
+					},
+					"user_id": {
+						"type": "string",
+						"format": "uuid",
+						"title": "User Id"
+					},
+					"created_at": {
+						"type": "string",
+						"format": "date-time",
+						"title": "Created At"
+					}
+				},
+				"type": "object",
+				"required": [
+					"id",
+					"key",
+					"user_id",
+					"created_at"
+				],
+				"title": "CreateAPIKeyResponse"
+			},
+			"CreateAPIKeyResponseContainer": {
+				"properties": {
+					"data": {
+						"$ref": "#/components/schemas/CreateAPIKeyResponse"
+					}
+				},
+				"type": "object",
+				"required": [
+					"data"
+				],
+				"title": "CreateAPIKeyResponseContainer"
+			},
+			"CreateAccessPolicy": {
+				"properties": {
+					"project": {
+						"type": "string",
+						"maxLength": 255,
+						"title": "Project"
+					},
+					"subject": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Subject"
+					},
+					"subject_id": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Subject Id"
+					},
+					"resource": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Resource"
+					},
+					"resource_id": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 512
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Resource Id"
+					},
+					"action": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Action"
+					},
+					"access_decision": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 16
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Access Decision"
+					}
+				},
+				"type": "object",
+				"required": [
+					"project"
+				],
+				"title": "CreateAccessPolicy"
+			},
+			"CreateAccessPolicyRequest": {
+				"properties": {
+					"data": {
+						"$ref": "#/components/schemas/CreateAccessPolicy"
+					}
+				},
+				"type": "object",
+				"required": [
+					"data"
+				],
+				"title": "CreateAccessPolicyRequest"
+			},
+			"CreatePermissionRequest": {
+				"properties": {
+					"name": {
+						"type": "string",
+						"maxLength": 255,
+						"title": "Name"
+					},
+					"alias": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Alias"
+					}
+				},
+				"type": "object",
+				"required": [
+					"name"
+				],
+				"title": "CreatePermissionRequest",
+				"description": "Permission request model "
+			},
+			"CreateSubscriptionNgRequest": {
+				"properties": {
+					"user_id": {
+						"type": "string",
+						"format": "uuid",
+						"title": "User Id"
+					},
+					"email": {
+						"type": "string",
+						"maxLength": 512,
+						"title": "Email"
+					},
+					"schedule": {
+						"type": "string",
+						"maxLength": 8,
+						"title": "Schedule"
+					},
+					"day_of": {
+						"type": "integer",
+						"maximum": {
+							"source": "31.0",
+							"parsedValue": 31
+						},
+						"minimum": {
+							"source": "0.0",
+							"parsedValue": 0
+						},
+						"title": "Day Of"
+					},
+					"send_at": {
+						"type": "string",
+						"format": "time",
+						"title": "Send At"
+					},
+					"tz": {
+						"type": "string",
+						"maxLength": 256,
+						"title": "Tz"
+					},
+					"source": {
+						"type": "string",
+						"title": "Source"
+					},
+					"json_data": {
+						"additionalProperties": true,
+						"type": "object",
+						"title": "Json Data",
+						"default": {}
+					}
+				},
+				"type": "object",
+				"required": [
+					"user_id",
+					"email",
+					"schedule",
+					"day_of",
+					"send_at",
+					"tz",
+					"source"
+				],
+				"title": "CreateSubscriptionNgRequest",
+				"description": "Create subscription request model "
+			},
+			"CreateUserRequest": {
+				"properties": {
+					"username": {
+						"type": "string",
+						"maxLength": 255,
+						"title": "Username"
+					},
+					"fullname": {
+						"type": "string",
+						"maxLength": 255,
+						"title": "Fullname"
+					},
+					"password": {
+						"type": "string",
+						"maxLength": 255,
+						"title": "Password"
+					},
+					"email": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Email"
+					},
+					"admin": {
+						"type": "boolean",
+						"title": "Admin",
+						"default": false
+					},
+					"source": {
+						"type": "string",
+						"title": "Source",
+						"default": "LOCAL"
+					}
+				},
+				"type": "object",
+				"required": [
+					"username",
+					"fullname",
+					"password"
+				],
+				"title": "CreateUserRequest",
+				"description": "Create new user request model "
+			},
+			"DeleteAccessPoliciesCondition": {
+				"properties": {
+					"project": {
+						"type": "string",
+						"title": "Project"
+					},
+					"resource": {
+						"type": "string",
+						"title": "Resource"
+					},
+					"resource_id": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Resource Id"
+					},
+					"resource_id__ilike": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Resource Id  Ilike"
+					}
+				},
+				"type": "object",
+				"required": [
+					"project",
+					"resource"
+				],
+				"title": "DeleteAccessPoliciesCondition"
+			},
+			"DeleteAccessPoliciesRequest": {
+				"properties": {
+					"conditions": {
+						"items": {
+							"$ref": "#/components/schemas/DeleteAccessPoliciesCondition"
+						},
+						"type": "array",
+						"title": "Conditions"
+					}
+				},
+				"type": "object",
+				"required": [
+					"conditions"
+				],
+				"title": "DeleteAccessPoliciesRequest"
+			},
+			"DirPageDict": {
+				"properties": {
+					"items": {
+						"items": {
+							"$ref": "#/components/schemas/FileInfoDict"
+						},
+						"type": "array",
+						"title": "Items"
+					},
+					"next_page_token": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Next Page Token"
+					}
+				},
+				"type": "object",
+				"required": [
+					"items",
+					"next_page_token"
+				],
+				"title": "DirPageDict"
+			},
+			"FileInfoDict": {
+				"properties": {
+					"name": {
+						"type": "string",
+						"title": "Name"
+					},
+					"full_path": {
+						"type": "string",
+						"title": "Full Path"
+					},
+					"type": {
+						"type": "string",
+						"title": "Type"
+					},
+					"size": {
+						"anyOf": [
+							{
+								"type": "integer"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Size"
+					},
+					"last_modified_timestamp": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Last Modified Timestamp"
+					},
+					"last_modified_dt_iso": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Last Modified Dt Iso"
+					}
+				},
+				"type": "object",
+				"required": [
+					"name",
+					"full_path",
+					"type",
+					"size",
+					"last_modified_timestamp",
+					"last_modified_dt_iso"
+				],
+				"title": "FileInfoDict"
+			},
+			"ForgotPasswordRequest": {
+				"properties": {
+					"username": {
+						"type": "string",
+						"maxLength": 1000,
+						"minLength": 1,
+						"title": "Username"
+					}
+				},
+				"type": "object",
+				"required": [
+					"username"
+				],
+				"title": "ForgotPasswordRequest"
+			},
+			"GrantPermissionRequest": {
+				"properties": {
+					"permission_id": {
+						"type": "string",
+						"format": "uuid",
+						"title": "Permission Id"
+					}
+				},
+				"type": "object",
+				"required": [
+					"permission_id"
+				],
+				"title": "GrantPermissionRequest",
+				"description": "Add permission request "
+			},
+			"GroupFetchResponse": {
+				"properties": {
+					"pagination": {
+						"$ref": "#/components/schemas/UserPagination"
+					},
+					"data": {
+						"items": {
+							"$ref": "#/components/schemas/GroupResponse"
+						},
+						"type": "array",
+						"title": "Data"
+					}
+				},
+				"type": "object",
+				"required": [
+					"pagination",
+					"data"
+				],
+				"title": "GroupFetchResponse"
+			},
+			"GroupRequest": {
+				"properties": {
+					"name": {
+						"type": "string",
+						"maxLength": 255,
+						"title": "Name"
+					},
+					"source": {
+						"type": "string",
+						"title": "Source",
+						"default": "LOCAL"
+					}
+				},
+				"type": "object",
+				"required": [
+					"name"
+				],
+				"title": "GroupRequest",
+				"description": "Group request model "
+			},
+			"GroupResponse": {
+				"properties": {
+					"id": {
+						"type": "string",
+						"format": "uuid",
+						"title": "Id"
+					},
+					"name": {
+						"type": "string",
+						"maxLength": 255,
+						"title": "Name"
+					},
+					"domain_name": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Domain Name"
+					},
+					"updated_at": {
+						"type": "string",
+						"format": "date-time",
+						"title": "Updated At"
+					},
+					"created_at": {
+						"type": "string",
+						"format": "date-time",
+						"title": "Created At"
+					},
+					"source": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Source"
+					}
+				},
+				"type": "object",
+				"required": [
+					"id",
+					"name",
+					"updated_at",
+					"created_at"
+				],
+				"title": "GroupResponse",
+				"description": "Group response model "
+			},
+			"GroupSortField": {
+				"type": "string",
+				"enum": [
+					"name",
+					"source"
+				],
+				"title": "GroupSortField",
+				"description": "Sortable fields"
+			},
+			"GroupSourceFilter": {
+				"type": "string",
+				"enum": [
+					"LOCAL",
+					"SAML",
+					"TABLEAU"
+				],
+				"title": "GroupSourceFilter",
+				"description": "List of available user's source to filter by "
+			},
+			"HTTPValidationError": {
+				"properties": {
+					"detail": {
+						"items": {
+							"$ref": "#/components/schemas/ValidationError"
+						},
+						"type": "array",
+						"title": "Detail"
+					}
+				},
+				"type": "object",
+				"title": "HTTPValidationError"
+			},
+			"JwtResponse": {
+				"properties": {
+					"jwt": {
+						"type": "string",
+						"title": "Jwt"
+					},
+					"payload": {
+						"additionalProperties": true,
+						"type": "object",
+						"title": "Payload"
+					}
+				},
+				"type": "object",
+				"required": [
+					"jwt",
+					"payload"
+				],
+				"title": "JwtResponse"
+			},
+			"MeUpdateRequest": {
+				"properties": {
+					"fullname": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Fullname"
+					},
+					"email": {
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "email"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Email"
+					}
+				},
+				"type": "object",
+				"title": "MeUpdateRequest",
+				"description": "Partial update a current user request model."
+			},
+			"Payload": {
+				"properties": {
+					"name": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Name"
+					},
+					"fullname": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Fullname"
+					}
+				},
+				"type": "object",
+				"title": "Payload",
+				"description": "JWT payload response model "
+			},
+			"PermissionResponse": {
+				"properties": {
+					"id": {
+						"type": "string",
+						"format": "uuid",
+						"title": "Id"
+					},
+					"name": {
+						"type": "string",
+						"maxLength": 255,
+						"title": "Name"
+					},
+					"alias": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Alias"
+					},
+					"updated_at": {
+						"type": "string",
+						"format": "date-time",
+						"title": "Updated At"
+					},
+					"created_at": {
+						"type": "string",
+						"format": "date-time",
+						"title": "Created At"
+					}
+				},
+				"type": "object",
+				"required": [
+					"id",
+					"name",
+					"updated_at",
+					"created_at"
+				],
+				"title": "PermissionResponse",
+				"description": "Permission response model "
+			},
+			"ResetPasswordRequest": {
+				"properties": {
+					"token": {
+						"type": "string",
+						"maxLength": 1000,
+						"minLength": 1,
+						"title": "Token"
+					},
+					"new_password": {
+						"type": "string",
+						"maxLength": 255,
+						"minLength": 8,
+						"title": "New Password"
+					},
+					"confirm_new_password": {
+						"type": "string",
+						"maxLength": 255,
+						"minLength": 8,
+						"title": "Confirm New Password"
+					}
+				},
+				"type": "object",
+				"required": [
+					"token",
+					"new_password",
+					"confirm_new_password"
+				],
+				"title": "ResetPasswordRequest"
+			},
+			"SetGroupsRequest": {
+				"properties": {
+					"groups": {
+						"items": {
+							"type": "string",
+							"format": "uuid"
+						},
+						"type": "array",
+						"title": "Groups"
+					}
+				},
+				"type": "object",
+				"required": [
+					"groups"
+				],
+				"title": "SetGroupsRequest",
+				"description": "Replace all groups for a user "
+			},
+			"SetPermissionsRequest": {
+				"properties": {
+					"permissions": {
+						"items": {
+							"type": "string",
+							"format": "uuid"
+						},
+						"type": "array",
+						"title": "Permissions"
+					}
+				},
+				"type": "object",
+				"required": [
+					"permissions"
+				],
+				"title": "SetPermissionsRequest",
+				"description": "Replace all permissions request "
+			},
+			"SubscriptionRequest": {
+				"properties": {
+					"email": {
+						"type": "string",
+						"maxLength": 256,
+						"title": "Email"
+					},
+					"view_name": {
+						"type": "string",
+						"maxLength": 256,
+						"title": "View Name"
+					},
+					"schedule": {
+						"type": "string",
+						"maxLength": 8,
+						"title": "Schedule"
+					},
+					"day_of": {
+						"type": "integer",
+						"maximum": {
+							"source": "31.0",
+							"parsedValue": 31
+						},
+						"minimum": {
+							"source": "0.0",
+							"parsedValue": 0
+						},
+						"title": "Day Of"
+					},
+					"send_at": {
+						"type": "string",
+						"format": "time",
+						"title": "Send At"
+					},
+					"tz": {
+						"type": "string",
+						"maxLength": 256,
+						"title": "Tz"
+					},
+					"full": {
+						"type": "boolean",
+						"title": "Full"
+					},
+					"json_data": {
+						"anyOf": [
+							{
+								"additionalProperties": true,
+								"type": "object"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Json Data"
+					}
+				},
+				"type": "object",
+				"required": [
+					"email",
+					"view_name",
+					"schedule",
+					"day_of",
+					"send_at",
+					"tz",
+					"full"
+				],
+				"title": "SubscriptionRequest",
+				"description": "Subscription create request model "
+			},
+			"TableauConnectedAppJwtRequest": {
+				"properties": {
+					"client_id": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Client Id"
+					},
+					"secret_id": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Secret Id"
+					},
+					"secret_key": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 512
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Secret Key"
+					},
+					"scope": {
+						"anyOf": [
+							{
+								"items": {
+									"type": "string",
+									"minLength": 1
+								},
+								"type": "array",
+								"minItems": 1
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Scope",
+						"default": [
+							"tableau:views:embed"
+						]
+					}
+				},
+				"type": "object",
+				"title": "TableauConnectedAppJwtRequest",
+				"description": "User request model"
+			},
+			"TableauRestTokenRequest": {
+				"properties": {
+					"user_id": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "User Id"
+					},
+					"site": {
+						"type": "string",
+						"maxLength": 512,
+						"minLength": 1,
+						"title": "Site"
+					}
+				},
+				"type": "object",
+				"required": [
+					"site"
+				],
+				"title": "TableauRestTokenRequest",
+				"description": "Tableau REST roken request model"
+			},
+			"TableauServer": {
+				"properties": {
+					"url": {
+						"type": "string",
+						"maxLength": 1024,
+						"title": "Url"
+					},
+					"site_name": {
+						"type": "string",
+						"title": "Site Name"
+					},
+					"product_version": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Product Version"
+					},
+					"rest_api_version": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Rest Api Version"
+					},
+					"build_number": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Build Number"
+					},
+					"site_id": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Site Id"
+					},
+					"site_content_url": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Site Content Url"
+					},
+					"site_state": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Site State"
+					},
+					"default_permissions": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Default Permissions"
+					}
+				},
+				"type": "object",
+				"required": [
+					"url",
+					"site_name"
+				],
+				"title": "TableauServer",
+				"description": "\" Tableau Server response model "
+			},
+			"UpdateAccessPolicy": {
+				"properties": {
+					"project": {
+						"type": "string",
+						"maxLength": 255,
+						"title": "Project"
+					},
+					"subject": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Subject"
+					},
+					"subject_id": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Subject Id"
+					},
+					"resource": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Resource"
+					},
+					"resource_id": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 512
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Resource Id"
+					},
+					"action": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Action"
+					},
+					"access_decision": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 16
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Access Decision"
+					},
+					"id": {
+						"type": "string",
+						"format": "uuid",
+						"title": "Id"
+					}
+				},
+				"type": "object",
+				"required": [
+					"project",
+					"id"
+				],
+				"title": "UpdateAccessPolicy"
+			},
+			"UpdateAccessPolicyRequest": {
+				"properties": {
+					"data": {
+						"$ref": "#/components/schemas/UpdateAccessPolicy"
+					}
+				},
+				"type": "object",
+				"required": [
+					"data"
+				],
+				"title": "UpdateAccessPolicyRequest"
+			},
+			"UpdatePermissionRequest": {
+				"properties": {
+					"name": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Name"
+					},
+					"alias": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Alias"
+					}
+				},
+				"type": "object",
+				"title": "UpdatePermissionRequest",
+				"description": "Permission request model "
+			},
+			"UpdateUserRequest": {
+				"properties": {
+					"username": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Username"
+					},
+					"fullname": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Fullname"
+					},
+					"password": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Password"
+					},
+					"email": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Email"
+					},
+					"admin": {
+						"type": "boolean",
+						"title": "Admin",
+						"default": false
+					}
+				},
+				"type": "object",
+				"title": "UpdateUserRequest",
+				"description": "Partial update an existing user request model "
+			},
+			"UserFetchResponse": {
+				"properties": {
+					"pagination": {
+						"$ref": "#/components/schemas/UserPagination"
+					},
+					"data": {
+						"items": {
+							"$ref": "#/components/schemas/UserResponse"
+						},
+						"type": "array",
+						"title": "Data"
+					}
+				},
+				"type": "object",
+				"required": [
+					"pagination",
+					"data"
+				],
+				"title": "UserFetchResponse"
+			},
+			"UserPagination": {
+				"properties": {
+					"limit": {
+						"type": "integer",
+						"exclusiveMinimum": {
+							"source": "0.0",
+							"parsedValue": 0
+						},
+						"title": "Limit"
+					},
+					"count": {
+						"type": "integer",
+						"minimum": {
+							"source": "0.0",
+							"parsedValue": 0
+						},
+						"title": "Count"
+					},
+					"offset": {
+						"type": "integer",
+						"minimum": {
+							"source": "0.0",
+							"parsedValue": 0
+						},
+						"title": "Offset"
+					}
+				},
+				"type": "object",
+				"required": [
+					"limit",
+					"count",
+					"offset"
+				],
+				"title": "UserPagination"
+			},
+			"UserResponse": {
+				"properties": {
+					"id": {
+						"type": "string",
+						"format": "uuid",
+						"title": "Id"
+					},
+					"username": {
+						"type": "string",
+						"maxLength": 255,
+						"title": "Username"
+					},
+					"fullname": {
+						"type": "string",
+						"maxLength": 255,
+						"title": "Fullname"
+					},
+					"email": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Email"
+					},
+					"admin": {
+						"type": "boolean",
+						"title": "Admin",
+						"default": false
+					},
+					"source": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 255
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Source"
+					},
+					"updated_at": {
+						"type": "string",
+						"format": "date-time",
+						"title": "Updated At"
+					},
+					"created_at": {
+						"type": "string",
+						"format": "date-time",
+						"title": "Created At"
+					}
+				},
+				"type": "object",
+				"required": [
+					"id",
+					"username",
+					"fullname",
+					"updated_at",
+					"created_at"
+				],
+				"title": "UserResponse",
+				"description": "User response model "
+			},
+			"UserSortFields": {
+				"type": "string",
+				"enum": [
+					"username",
+					"fullname",
+					"source"
+				],
+				"title": "UserSortFields",
+				"description": "List of fields to sort "
+			},
+			"UserSourceFilter": {
+				"type": "string",
+				"enum": [
+					"LOCAL",
+					"SAML",
+					"TABLEAU",
+					"SCIM"
+				],
+				"title": "UserSourceFilter",
+				"description": "List of available user's source to filter by "
+			},
+			"ValidationError": {
+				"properties": {
+					"loc": {
+						"items": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "integer"
+								}
+							]
+						},
+						"type": "array",
+						"title": "Location"
+					},
+					"msg": {
+						"type": "string",
+						"title": "Message"
+					},
+					"type": {
+						"type": "string",
+						"title": "Error Type"
+					},
+					"input": {
+						"title": "Input"
+					},
+					"ctx": {
+						"type": "object",
+						"title": "Context"
+					}
+				},
+				"type": "object",
+				"required": [
+					"loc",
+					"msg",
+					"type"
+				],
+				"title": "ValidationError"
+			},
+			"VersionData": {
+				"properties": {
+					"branch": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Branch"
+					},
+					"hash_commit": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Hash Commit"
+					},
+					"hash_commit_short": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Hash Commit Short"
+					},
+					"tag": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Tag"
+					},
+					"version": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Version"
+					}
+				},
+				"type": "object",
+				"title": "VersionData"
+			},
+			"VersionResponse": {
+				"properties": {
+					"data": {
+						"anyOf": [
+							{
+								"$ref": "#/components/schemas/VersionData"
+							},
+							{
+								"type": "null"
+							}
+						]
+					}
+				},
+				"type": "object",
+				"title": "VersionResponse"
+			}
+		}
+	},
+	"servers": [
+		{
+			"url": "/auth"
+		}
+	]
+}
