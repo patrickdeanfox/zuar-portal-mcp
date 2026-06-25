@@ -61,24 +61,26 @@ const CURRENTBLOCK = `# Reading data in an HTML block: currentBlock (v1.18+)
 
 \`currentBlock\` is auto-injected and valid synchronously at load. Read query data from
 \`currentBlock.queryResults\` — an array with one entry per query configured on the block.
-Each entry has \`.columns\` and \`.data\` (keyed by column name). Use a small helper that
-tolerates both column-oriented and row-oriented \`.data\`:
+Confirmed v1.18 shape (build 2026-06): \`.columns\` is a plain array of column-name strings,
+and \`.data\` is an array of **positional row arrays** (\`[[v0, v1, ...], ...]\`, values keep
+native types; \`.data\` may be a Proxy — treat as a normal array). Map rows to objects by
+name with a small helper (it also tolerates older column-keyed/descriptor shapes):
 
 \`\`\`js
 function getQueryData(index = 0) {
   const r = currentBlock.queryResults?.[index];
   if (!r || !r.data) return [];
   const names = (r.columns || []).map(c => (typeof c === 'object' ? c.name : c));
-  if (!Array.isArray(r.data)) {
-    // column-oriented: { col_name: [v0, v1, ...] }
-    const len = names.length ? (r.data[names[0]]?.length ?? 0) : 0;
-    return Array.from({ length: len }, (_, i) =>
-      Object.fromEntries(names.map(n => [n, r.data[n]?.[i]]))
+  if (Array.isArray(r.data)) {
+    // v1.18: positional row arrays -> objects keyed by column name
+    return r.data.map(row =>
+      Array.isArray(row) ? Object.fromEntries(names.map((n, i) => [n, row[i]])) : row
     );
   }
-  // row-oriented fallback: [[v0, v1], ...] or [{...}, ...]
-  return r.data.map(row =>
-    Array.isArray(row) ? Object.fromEntries(names.map((n, i) => [n, row[i]])) : row
+  // guard: column-oriented { col_name: [v0, v1, ...] }
+  const len = names.length ? (r.data[names[0]]?.length ?? 0) : 0;
+  return Array.from({ length: len }, (_, i) =>
+    Object.fromEntries(names.map(n => [n, r.data[n]?.[i]]))
   );
 }
 
@@ -87,8 +89,8 @@ const singleValue = rows[0]?.some_column;
 \`\`\`
 
 Column aliases must exactly match the query — a name mismatch is the #1 cause of an empty
-block. Deprecated v1.18 aliases (still work, v1.17 shape): \`currentBlock.data\` /
-\`currentBlock.columns\` = \`queryResults[0]\`; \`siteConfig\` -> use \`currentBlock.config\`.
+block. Deprecated v1.18 aliases (still work): \`currentBlock.data\` / \`currentBlock.columns\`
+= \`queryResults[0]\`; \`siteConfig\` -> use \`currentBlock.config\`.
 
 ## Other injected context
 \`currentBlock.currentUser\`, \`.config\`, \`.theme\`, \`.layout\`, \`.pages\`, \`.system\`,

@@ -53,11 +53,13 @@ IO helpers it calls.
 ## Data access (v1.18+)
 
 - Read query data from `currentBlock.queryResults[index]` — one entry per query
-  configured on the block, each with `.columns` (descriptor array) and `.data`.
-  `queryResults[0].data.colName` returns a flat column array; rows can also be read as
-  key-value objects.
-- Include a `getQueryData(index)` helper that maps rows to `{ column_name: value }`
-  objects, and access values by column name.
+  configured on the block. Confirmed v1.18 shape (build 2026-06): `.columns` is a plain
+  array of column-name strings (`['region', 'branch', ...]`) and `.data` is an array of
+  **positional row arrays** (`[['Northeast', 'Boston Main', 142, ...], ...]`). Values keep
+  native types (numbers stay numbers). `.data` may be a Proxy — treat it as a normal array.
+- Don't hardcode positional indices. Include a `getQueryData(index)` helper that maps each
+  row to a `{ column_name: value }` object using `.columns`, then access values by name:
+  `const records = q.data.map(r => Object.fromEntries(q.columns.map((c, i) => [c, r[i]])));`
 - **Deprecated in v1.18 — aliases, don't author with them:** `currentBlock.data` and
   `currentBlock.columns` (aliases for `queryResults[0].data`/`.columns`), and
   `currentBlock.siteConfig` (use `currentBlock.config`). These still work but are the
