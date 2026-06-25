@@ -3,3 +3,4 @@ dist/
 *.mcpb
 config.json
 .DS_Store
+test-harness.mjs
