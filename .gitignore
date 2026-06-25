@@ -4,3 +4,5 @@ dist/
 config.json
 .DS_Store
 test-harness.mjs
+# Real portal block exports — may contain customer data; keep out of the repo
+portal_block_*.json

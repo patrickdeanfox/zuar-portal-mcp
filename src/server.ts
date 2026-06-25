@@ -947,31 +947,37 @@ function registerPrompts(server: McpServer): void {
         "",
         "Follow this order:",
         "1. Read the resources zportal://guide/block-structure, zportal://guide/currentblock, " +
-          "and zportal://guide/conventions (the active always/never rules) — and " +
+          "zportal://guide/zportal-api (filters, modals, block APIs), and " +
+          "zportal://guide/conventions (the active always/never rules) — and " +
           "zportal://guide/amcharts-loader if the block needs a chart.",
         `2. ${dsLine} Call list_resource with resource=\"datasource\" (and resource=\"query\" on ` +
           "1.18+) to find the right __source__ UUID, then fetch_sample_rows to see the real " +
           "column aliases and values.",
         "3. Author two fields:",
         '   - HTML+JS (body-level only: no <!DOCTYPE>/<html>/<head>/<body>/<style>). Wrap ' +
-          'markup in <div id="zuar-block-root"> (the established convention).',
-        "   - CSS (no <style> tags), with every selector scoped under #zuar-block-root.",
-        "   Structure the <script> as: top-level config (DEBUG flag, DEBUG-gated logger, " +
-          "QUERY_INDEX + column-name constants matching the query aliases, selectors, thresholds) " +
-          "-> getQueryData(index) helper (read currentBlock.queryResults[n]; never the deprecated " +
-          "currentBlock.data/.columns, zPortal.dataSource, or fetchResults) -> pure render helpers " +
-          "-> a single bottom-level init() called last. Obtain currentBlock.getOnLoadedCallback() " +
-          "early and call it exactly once after render (in a finally for async) or the loader hangs.",
-        "4. Use theme variables (var(--color-*, fallback)) — never hardcode hex/fonts. Don't " +
-          "author loading states (Portal has a skeleton loader). Avoid AngularJS $compile " +
-          "footguns: {{ }} is evaluated (escape or set via JS); format currency with " +
-          "Intl.NumberFormat to dodge the $ issue. Wire interactions with addEventListener / " +
-          "data-zuar-action — inline on* handlers and external <script src> are stripped. No " +
-          "eval/new Function()/document.write.",
+          'markup in a single <div class="wrapper"> and scope all CSS under .wrapper (suffix ' +
+          "ids/classes/vars when several similar blocks share a page).",
+        "   - CSS (no <style> tags), with every selector scoped under .wrapper.",
+        "   Structure the <script> wrapped in an IIFE: top-level config (a DEBUG/verboseLogging " +
+          "flag + gated logger, column-name constants matching the query aliases, selectors, " +
+          "thresholds) -> getQueryData(index) helper (read currentBlock.queryResults[n]; the " +
+          "currentBlock.data/.columns aliases are the deprecated v1.18 shape) -> pure render " +
+          "helpers that dispose any prior render first -> a single bottom-level init() called " +
+          "last. For ASYNC blocks (library load, fetch, deferred render) obtain " +
+          "currentBlock.getOnLoadedCallback() early and call it once after render (in a finally) " +
+          "or the loader can hang; sync blocks don't need it.",
+        "4. Use theme variables (var(--color-primary, fallback), --body-bg-color, etc.) — never " +
+          "hardcode hex/fonts. Don't author loading states (Portal has a skeleton loader). Avoid " +
+          "AngularJS $compile footguns: {{ }} is evaluated (escape or set via JS); format currency " +
+          "with value.toLocaleString('en-US',{style:'currency',currency:'USD'}) to dodge the $ issue. " +
+          "Prefer addEventListener over inline on* handlers; external <script src> is stripped, so " +
+          "load libs via zPortal.resources.load or AMCHARTS_LOADER. Use zPortal.modal.show for modals " +
+          "and zPortal.dataSource.setFilters/clearFilters for filtering. No eval/new Function()/document.write.",
         "5. QA self-review before shipping: (a) keys read off queryResults match the query " +
           "column aliases and null/empty rows are handled; (b) no <html>/<head>/<body>/<style>, " +
-          "CSS scoped, async calls the loaded callback; (c) no unsafe JS. Fix issues, then create " +
-          "with create_block (type is html) and report the new block id.",
+          "CSS scoped to .wrapper, async paths call the loaded callback, prior render disposed on " +
+          "re-run; (c) no unsafe JS. Fix issues, then create with create_block (type is html) and " +
+          "report the new block id.",
       ].join("\n");
       return {
         messages: [{ role: "user", content: { type: "text", text } }],

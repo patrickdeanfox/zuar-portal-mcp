@@ -94,32 +94,43 @@ const DEFAULT_CONVENTIONS = [
   "- End with a single bottom-level `init()` orchestrator — the only call at end of",
   "  script (`init();`). Helpers above it stay pure; side effects live in init().",
   "",
-  "## Data + loading",
-  "- Read `currentBlock.queryResults[index]`; never read `.data` directly — use a",
-  "  `getQueryData(index)` helper. Column names are lowercase_with_underscores and must",
-  "  match the query aliases (mismatch is the #1 cause of an empty block).",
-  "- Deprecated, don't use: currentBlock.data/.columns, zPortal.dataSource, fetchResults.",
-  "- Obtain `currentBlock.getOnLoadedCallback()` early; call it exactly once after the",
-  "  UI is drawn (in a `finally` for async). Omitting it stalls the page (loaded_timeout).",
-  "- Script runs once per query load; return early if required queries haven't loaded.",
-  "- No polling/listeners for data (setInterval, DOMContentLoaded). No custom loading",
-  "  states — Portal renders a skeleton loader.",
+  "## Data + loading (v1.18+)",
+  "- Read `currentBlock.queryResults[index]` (.columns + .data) via a `getQueryData(index)`",
+  "  helper. Column names are lowercase_with_underscores and must match the query aliases",
+  "  (mismatch is the #1 cause of an empty block).",
+  "- Deprecated v1.18 aliases (still work): currentBlock.data/.columns (= queryResults[0]),",
+  "  siteConfig (use currentBlock.config). NOT deprecated: zPortal.dataSource.setFilters/",
+  "  clearFilters, dataSource.fetchResults, dataSource.on('load',…) — these are current.",
+  "- Data is present synchronously at load — don't poll (setInterval/DOMContentLoaded). To",
+  "  react to filter changes use `zPortal.dataSource.on('load', dsId, handler)` (keep the",
+  "  handler in a var so you can .off() it). No custom loading states — Portal has a loader.",
+  "- For ASYNC blocks (lib load, fetch, promises): obtain `currentBlock.getOnLoadedCallback()`",
+  "  early and call once after render (in a `finally`), or the page can stall (loaded_timeout).",
+  "  Sync blocks don't need it. Use getOnAnimatedCallback() for export-after-animation.",
+  "- The block's saved `data` field is its query binding: {__source__: <datasource-uuid>,",
+  "  columns:[SQL aliases], group_by, limit, enabled}.",
   "",
-  "## Theme (enforced)",
-  "- Consume the theme via `var(--color-*, fallback)`; never hardcode hex/fonts.",
-  "  Key tokens: --color-primary #FA225B, --color-text #313131, --block-bg-color,",
-  "  --system-gray #F6F6F6, --color-lightgray #E4E4E4, --font-stack-primary 'Roboto'.",
-  "- Wrap markup in `<div id=\"zuar-block-root\">` and scope all CSS under #zuar-block-root.",
+  "## Theme + scoping (enforced)",
+  "- Consume the theme via `var(--token, fallback)`; never hardcode hex/fonts. v1.18 token",
+  "  names: --color-primary, --color-text, --color-link, --color-success, --color-danger,",
+  "  --body-bg-color, --header-bg-color, --sidebar-bg-color (values are theme-dependent).",
+  "- Scope CSS to the block: wrap markup in `<div class=\"wrapper\">` and scope selectors",
+  "  under `.wrapper`. When several similar blocks share a page, suffix ids/classes/vars",
+  "  (#chartdiv1, CONFIG_1) and wrap the script in an IIFE so nothing leaks to window.",
   "",
   "## AngularJS $compile footguns",
   "- Block HTML runs through `$compile`. `{{ }}` is evaluated — escape literals as",
   "  `&#123;&#123;` or set text via JS. `$` in strings (currency) can be mangled — use",
-  "  `Intl.NumberFormat`. Same caution for `{`, `}`, and `ng-` attributes.",
+  "  `value.toLocaleString('en-US',{style:'currency',currency:'USD'})`. Same for `ng-` attrs.",
   "",
   "## Interactivity + safety (enforced)",
-  "- Inline `on*` handlers and external `<script src>` are stripped — use",
-  "  `addEventListener` / `data-zuar-action` and `name=` inputs; load libs dynamically",
-  "  or via AMCHARTS_LOADER. Give clickable elements hover/focus-visible/active states.",
+  "- Prefer `addEventListener`/`name=` inputs over inline on* handlers (which do work but",
+  "  belong out of markup). External `<script src>` is stripped — load libs via",
+  "  `zPortal.resources.load(url)` or AMCHARTS_LOADER. Give clickables hover/focus-visible/",
+  "  active states + ARIA. Use `zPortal.modal.show({...})` for modals (don't hand-roll DOM",
+  "  modals); toggle blocks with `zPortal.block.show/hide(iid)`.",
+  "- Re-render cleanup: the script re-runs per reload — dispose the prior am5 root",
+  "  (`currentBlock.container._am5Root?.dispose()`) / clear innerHTML before rebuilding.",
   "- No `eval`/`new Function()`/`document.write`; no untrusted DOM interpolation.",
   "",
   "## Code style",
@@ -266,35 +277,49 @@ export function validateBlock(body: Record<string, unknown>): ValidationResult {
     report("no_unsafe_js", "Remove eval()/new Function()/document.write — blocked in the portal sandbox.");
   }
   if (hasHtml && /<script[^>]+\bsrc\s*=/i.test(html)) {
-    report("no_external_script_src", "External <script src> is stripped — load libraries dynamically or via AMCHARTS_LOADER.");
+    report("no_external_script_src", "External <script src> is stripped — load libraries via zPortal.resources.load(url), the global AMCHARTS_LOADER, or document.createElement('script').");
   }
   if (hasHtml && /\son[a-z]+\s*=\s*["']/i.test(html)) {
-    report("no_inline_event_handlers", "Inline on* handlers are stripped — use addEventListener or data-zuar-action.");
+    report("no_inline_event_handlers", "Prefer addEventListener over inline on* handlers — cleaner separation and CSP-safe. (Inline handlers calling global functions do work in the portal, but are harder to maintain.)");
   }
   if (hasHtml && /\{\{/.test(html)) {
     report("angular_interpolation", "'{{' is evaluated by AngularJS $compile — escape as &#123;&#123; or set text via JS.");
   }
-  if (hasHtml && (/currentBlock\.(data|columns)\b/.test(html) || /zPortal\.dataSource\b/.test(html) || /\bfetchResults\b/.test(html))) {
-    report("no_deprecated_data_api", "Deprecated data API — use currentBlock.queryResults[n] via a getQueryData() helper (not currentBlock.data/.columns, zPortal.dataSource, or fetchResults).");
+  // v1.18 deprecations only: currentBlock.data/.columns are aliases for queryResults[0],
+  // and siteConfig is superseded by config. NOT deprecated: zPortal.dataSource.setFilters/
+  // clearFilters (the current filter API) or dataSource.fetchResults (current ad-hoc fetch).
+  if (hasHtml && (/currentBlock\.(data|columns)\b/.test(html) || /\bsiteConfig\b/.test(html))) {
+    report("no_deprecated_data_api", "Deprecated v1.18 API — currentBlock.data/.columns are aliases for queryResults[0]; read currentBlock.queryResults[n] instead, and use currentBlock.config not siteConfig. (zPortal.dataSource.setFilters/clearFilters and dataSource.fetchResults are current and not flagged.)");
   }
 
   // ── Style rules (only meaningful when HTML/JS is provided) ──
   if (hasHtml && html.trim()) {
     const hasScript = /<script[\s>]/i.test(html);
-    if (!/\bconst\s+CONFIG\b/.test(html) && !/\bDEBUG\b/.test(html)) {
-      report("require_top_level_config", "No top-level CONFIG block detected (const CONFIG / DEBUG).");
+    // CONFIG may be const/let/var and suffixed for cross-block uniqueness (CONFIG_1).
+    const hasConfig = /\b(?:const|let|var)\s+CONFIG\w*/.test(html);
+    const hasDebug = /\bDEBUG\b/.test(html) || /\bverboseLogging\b/.test(html);
+    // An IIFE wrapper is the dominant real-world orchestrator — accept it like init().
+    const hasIife = /\(\s*function\s*\(\s*\)\s*\{/.test(html) || /\(\s*\(\s*\)\s*=>\s*\{/.test(html);
+    // Async/library work is what actually needs the loaded callback.
+    const doesAsyncWork =
+      /\basync\b|\bawait\b|\.then\s*\(|new\s+Promise\b|AMCHARTS_LOADER|resources\.load|fetchResults|setTimeout\s*\(/.test(
+        html
+      );
+
+    if (!hasConfig && !hasDebug) {
+      report("require_top_level_config", "No top-level config object detected (const/let/var CONFIG…). Hoist constants and toggles to one place at the top.");
     }
-    if (!/\bDEBUG\b/.test(html)) {
-      report("require_debug_toggle", "No DEBUG-gated logging toggle detected.");
+    if (!hasDebug) {
+      report("require_debug_toggle", "No debug-gated logging toggle detected (a DEBUG/verboseLogging flag gating console output).");
     }
-    if (!/\binit\s*\(\s*\)/.test(html)) {
-      report("require_init", "No bottom-level init() call detected to control order of operations.");
+    if (!/\binit\s*\(\s*\)/.test(html) && !hasIife) {
+      report("require_init", "No bottom-level init() call or IIFE wrapper detected to control order of operations and avoid leaking globals.");
     }
-    if (hasScript && !/getOnLoadedCallback/.test(html)) {
-      report("require_loaded_callback", "No getOnLoadedCallback() — obtain it early and call once after render, or the loader hangs (loaded_timeout).");
+    if (hasScript && doesAsyncWork && !/getOnLoadedCallback/.test(html)) {
+      report("require_loaded_callback", "Async work without getOnLoadedCallback() — obtain it early and call it once after render (in a finally), or Portal's loader can hang (loaded_timeout).");
     }
     if (/setInterval\s*\(/.test(html) || /DOMContentLoaded/.test(html)) {
-      report("no_data_polling", "Query data is ready when the script runs — drop setInterval/DOMContentLoaded polling.");
+      report("no_data_polling", "Query data is ready when the script runs — drop setInterval/DOMContentLoaded polling for data (UI timers are fine).");
     }
   }
 
