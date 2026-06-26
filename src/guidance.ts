@@ -74,7 +74,9 @@ name with a small helper (it also tolerates older column-keyed/descriptor shapes
 \`\`\`js
 function getQueryData(index = 0) {
   const r = currentBlock.queryResults?.[index];
-  if (!r || !r.data) return [];
+  if (!r) return [];
+  if (Array.isArray(r.mappedData)) return r.mappedData;   // v1.18/1.19: rows already as objects
+  if (!r.data) return [];
   const names = (r.columns || []).map(c => (typeof c === 'object' ? c.name : c));
   if (Array.isArray(r.data)) {
     // v1.18: positional row arrays -> objects keyed by column name

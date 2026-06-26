@@ -57,9 +57,10 @@ IO helpers it calls.
   array of column-name strings (`['region', 'branch', ...]`) and `.data` is an array of
   **positional row arrays** (`[['Northeast', 'Boston Main', 142, ...], ...]`). Values keep
   native types (numbers stay numbers). `.data` may be a Proxy — treat it as a normal array.
-- Don't hardcode positional indices. Include a `getQueryData(index)` helper that maps each
-  row to a `{ column_name: value }` object using `.columns`, then access values by name:
-  `const records = q.data.map(r => Object.fromEntries(q.columns.map((c, i) => [c, r[i]])));`
+- Don't hardcode positional indices. Include a `getQueryData(index)` helper. Prefer
+  `.mappedData` (when present it is the rows already as `{ column_name: value }` objects),
+  falling back to mapping `.data` by `.columns`:
+  `const records = q.mappedData || q.data.map(r => Object.fromEntries(q.columns.map((c, i) => [c, r[i]])));`
 - **Deprecated in v1.18 — aliases, don't author with them:** `currentBlock.data` and
   `currentBlock.columns` (aliases for `queryResults[0].data`/`.columns`), and
   `currentBlock.siteConfig` (use `currentBlock.config`). These still work but are the
@@ -149,9 +150,13 @@ evaluated, not rendered literally.
 
 - `{{ … }}` is evaluated. For literal double-braces in visible text use
   `&#123;&#123;` or set text via JS (`element.textContent = …`).
-- `$` in strings (currency) can be mangled. Format with `value.toLocaleString('en-US',
-  { style: 'currency', currency: 'USD' })` (the common pattern in real blocks) or
-  `Intl.NumberFormat(...)`, use `&#36;`, or set the text via DOM after data loads.
+- **A literal `$` is ENFORCED against (no_raw_dollar = error) when it sits next to a quote,
+  backtick, `&`, `$`, or a digit** (e.g. `'$'`, `"$"`, `$1`, `` $` ``). `$compile` rewrites it
+  using String.replace special patterns (`$'`, `` $` ``, `$&`, `$$`, `$n`), which throws a
+  SyntaxError at inject time and silently blanks the ENTIRE block. Never put a literal `$` in
+  the HTML/JS: format currency with `value.toLocaleString('en-US', { style: 'currency',
+  currency: 'USD' })` / `Intl.NumberFormat(...)`; for a bare sign use `String.fromCharCode(36)`
+  in JS or `&#36;` in HTML text. (Template-literal `${…}` and jQuery `$(` are NOT flagged.)
 - Same caution for literal `{`, `}`, and `ng-…` / `data-ng-…` attributes.
 
 ## Interactivity — sandbox-safe (enforced: warn)

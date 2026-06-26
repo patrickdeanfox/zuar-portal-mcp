@@ -8,6 +8,7 @@
     "no_external_script_src": "warn",
     "no_inline_event_handlers": "warn",
     "angular_interpolation": "warn",
+    "no_raw_dollar": "error",
     "no_deprecated_data_api": "warn",
     "require_top_level_config": "warn",
     "require_debug_toggle": "warn",

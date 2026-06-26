@@ -36,6 +36,7 @@ export type RuleId =
   | "no_external_script_src"
   | "no_inline_event_handlers"
   | "angular_interpolation"
+  | "no_raw_dollar"
   | "no_deprecated_data_api"
   | "require_top_level_config"
   | "require_debug_toggle"
@@ -66,6 +67,7 @@ const DEFAULT_SEVERITIES: Record<RuleId, Severity> = {
   no_external_script_src: "warn",
   no_inline_event_handlers: "warn",
   angular_interpolation: "warn",
+  no_raw_dollar: "error",
   no_deprecated_data_api: "warn",
   require_top_level_config: "warn",
   require_debug_toggle: "warn",
@@ -100,8 +102,10 @@ const DEFAULT_CONVENTIONS = [
   "",
   "## Data + loading (v1.18+)",
   "- Read `currentBlock.queryResults[index]` via a `getQueryData(index)` helper. Confirmed",
-  "  v1.18 shape: .columns is a string array, .data is positional row arrays [[v0,v1],…]",
-  "  (native types). Map rows to {col: value} by name; don't hardcode indices. Column names",
+  "  v1.18/1.19 shape: .columns is a string array, .data is positional row arrays [[v0,v1],…]",
+  "  (native types). `.mappedData` (when present) is those rows already as {col:value} objects —",
+  "  prefer it: `q.mappedData || q.data.map(r => Object.fromEntries(q.columns.map((c,i)=>[c,r[i]])))`.",
+  "  Don't hardcode indices. Column names",
   "  must match the query aliases (mismatch is the #1 cause of an empty block).",
   "- Deprecated v1.18 aliases (still work): currentBlock.data/.columns (= queryResults[0]),",
   "  siteConfig (use currentBlock.config). NOT deprecated: zPortal.dataSource.setFilters/",
@@ -133,8 +137,11 @@ const DEFAULT_CONVENTIONS = [
   "",
   "## AngularJS $compile footguns",
   "- Block HTML runs through `$compile`. `{{ }}` is evaluated — escape literals as",
-  "  `&#123;&#123;` or set text via JS. `$` in strings (currency) can be mangled — use",
-  "  `value.toLocaleString('en-US',{style:'currency',currency:'USD'})`. Same for `ng-` attrs.",
+  "  `&#123;&#123;` or set text via JS. **A literal `$` is ENFORCED-against** (no_raw_dollar=error):",
+  "  it is rewritten by $compile via String.replace special patterns ($', $`, $&, $$, $n) and",
+  "  throws a SyntaxError that blanks the whole block. For currency use",
+  "  `value.toLocaleString('en-US',{style:'currency',currency:'USD'})`; for a bare sign use",
+  "  `String.fromCharCode(36)` (JS) or `&#36;` (HTML). Same caution for `ng-` attrs.",
   "",
   "## Interactivity + safety (enforced)",
   "- Prefer `addEventListener`/`name=` inputs over inline on* handlers (which do work but",
@@ -302,6 +309,19 @@ export function validateBlock(body: Record<string, unknown>): ValidationResult {
   }
   if (hasHtml && /\{\{/.test(html)) {
     report("angular_interpolation", "'{{' is evaluated by AngularJS $compile — escape as &#123;&#123; or set text via JS.");
+  }
+  // A literal `$` adjacent to a quote/backtick/&/$/digit is rewritten by AngularJS $compile
+  // following String.replace special-pattern rules ($', $`, $&, $$, $n) — it throws a
+  // SyntaxError at inject time and silently breaks the ENTIRE block (blank KPIs/charts/table).
+  // Does NOT match template-literal `${` (followed by `{`) or jQuery `$(` (followed by `(`).
+  if (hasHtml && /\$['"`&$0-9]/.test(html)) {
+    report(
+      "no_raw_dollar",
+      "Literal '$' next to a quote/backtick/&/$/digit (e.g. '$', \"$\", $1, $&) is mangled by " +
+        "AngularJS $compile and breaks the whole block with a SyntaxError. Don't put a literal $ in " +
+        "the HTML/JS section: for currency use value.toLocaleString('en-US',{style:'currency'," +
+        "currency:'USD'}); for a bare sign use String.fromCharCode(36) in JS or &#36; in HTML text."
+    );
   }
   // v1.18 deprecations only: currentBlock.data/.columns are aliases for queryResults[0],
   // and siteConfig is superseded by config. NOT deprecated: zPortal.dataSource.setFilters/
