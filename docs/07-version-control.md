@@ -14,12 +14,27 @@ PORTAL_VC_PUSH=1                           # (optional) git push after each comm
 PORTAL_VC_REMOTE=origin                    # (optional) remote name, default origin
 ```
 
-Or, when running from source, configure it in `config.json` (env vars override this; `config.json`
-is gitignored, so secrets stay local):
+Or configure it entirely in `config.json` (env vars override this; `config.json` is gitignored, so
+secrets stay local). With `remote_url` (+ a `token` for HTTPS) the server **creates/points the remote
+and configures push auth for you** — no `gh`/SSH/credential-helper setup needed, which makes
+**other machines** plug-and-play `[2.3.0]`:
 ```json
 { "portal": { "url": "…", "apiKey": "…", "userId": "…" },
-  "vc": { "dir": "/abs/path/zuar-portal-state", "push": false, "remote": "origin" } }
+  "vc": {
+    "dir": "/abs/path/zuar-portal-state",
+    "push": true,
+    "remote": "origin",
+    "remote_url": "https://github.com/you/zuar-portal-state.git",
+    "token": "<PAT with repo scope>",
+    "username": "x-access-token"
+  } }
 ```
+**How the token is handled:** it's applied as a git HTTPS auth header in the state repo's **local**
+`.git/config` (and read from your gitignored `config.json`) — it is **never logged**, never echoed by
+`vc_status` (which shows only `tokenConfigured: true`), and never written to a tracked file. Omit
+`token` to use the machine's existing git auth (gh / credential helper / SSH). Prefer a **fine-grained
+PAT scoped to just the state repo**. For SSH instead, set `remote_url` to a `git@…` URL and skip the
+token (key-based auth).
 
 GitHub setup (creates the repo, clones it locally, then point `PORTAL_VC_DIR` at the clone):
 ```bash

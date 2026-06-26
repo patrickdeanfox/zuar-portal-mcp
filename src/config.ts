@@ -119,23 +119,35 @@ export interface VcSettings {
   dir: string | null; // resolved repo path; null = version control disabled
   push: boolean;
   remote: string;
+  remoteUrl: string | null; // if set, the server configures this remote automatically
+  token: string | null; // optional PAT for HTTPS push auth (never logged)
+  username: string; // HTTPS basic-auth username for the token (default x-access-token)
 }
 
 let cachedVc: VcSettings | null = null;
 
 /**
  * Resolve version-control settings. Env vars win; otherwise a `vc` section in
- * config.json: { "dir": "/path/to/repo", "push": false, "remote": "origin" }.
- * `dir` unset/empty = VC disabled (no-op).
+ * config.json:
+ *   { "dir": "/path/to/repo", "push": true, "remote": "origin",
+ *     "remote_url": "https://github.com/you/zuar-portal-state.git",
+ *     "token": "<PAT>", "username": "x-access-token" }
+ * `dir` unset/empty = VC disabled (no-op). With `remote_url` (+ `token` for HTTPS), the
+ * server creates/points the remote and configures auth so push works on a fresh machine
+ * with no manual git setup. config.json is gitignored; the token is never logged.
  */
 export function loadVcConfig(): VcSettings {
   if (cachedVc !== null) return cachedVc;
   const f = (readRawConfigFile().vc as Record<string, unknown>) ?? {};
-  const rawDir = process.env.PORTAL_VC_DIR ?? (typeof f.dir === "string" ? f.dir : undefined);
+  const s = (k: string): string | undefined => (typeof f[k] === "string" ? (f[k] as string) : undefined);
+  const rawDir = process.env.PORTAL_VC_DIR ?? s("dir");
   const dir = rawDir && rawDir.trim() ? path.resolve(rawDir.trim()) : null;
   const push = envOn("PORTAL_VC_PUSH") || f.push === true;
-  const remote = process.env.PORTAL_VC_REMOTE ?? (typeof f.remote === "string" ? f.remote : "origin");
-  cachedVc = { dir, push, remote };
+  const remote = process.env.PORTAL_VC_REMOTE ?? s("remote") ?? "origin";
+  const remoteUrl = (process.env.PORTAL_VC_REMOTE_URL ?? s("remote_url") ?? "").trim() || null;
+  const token = (process.env.PORTAL_VC_TOKEN ?? s("token") ?? "").trim() || null;
+  const username = (process.env.PORTAL_VC_USERNAME ?? s("username") ?? "x-access-token").trim() || "x-access-token";
+  cachedVc = { dir, push, remote, remoteUrl, token, username };
   return cachedVc;
 }
 

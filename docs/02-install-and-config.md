@@ -74,6 +74,9 @@ Truthy values: `1`, `true`, `yes`, `on`.
 | `PORTAL_VC_DIR` `[2.2.0]` | `portal_vc_dir` | (unset = VC off) | Git repo path; enables auto-commit version control |
 | `PORTAL_VC_PUSH` `[2.2.0]` | `portal_vc_push` | `false` | `git push` after each commit |
 | `PORTAL_VC_REMOTE` `[2.2.0]` | `portal_vc_remote` | `origin` | Remote to push to |
+| `PORTAL_VC_REMOTE_URL` `[2.3.0]` | `portal_vc_remote_url` | — | State-repo remote URL; the server configures the remote automatically |
+| `PORTAL_VC_TOKEN` `[2.3.0]` | `portal_vc_token` | — | PAT for HTTPS push auth (repo scope); applied as a git auth header, never logged |
+| `PORTAL_VC_USERNAME` `[2.3.0]` | `portal_vc_username` | `x-access-token` | Basic-auth username paired with the token |
 | `PORTAL_DESIGN_FILE` `[2.2.0]` | `portal_design_file` | (bundled `assets/design.md`) | Override the house design system |
 | `PORTAL_BLOCK_RULES_FILE` | — | (bundled `assets/rules.json`) | Override authoring rules + conventions |
 | `PORTAL_DEBUG` | — | `0` | Verbose stderr logging — enables on `1` only (never logs secrets) |
@@ -91,6 +94,16 @@ Truthy values: `1`, `true`, `yes`, `on`.
    "origin" } }`. The server runs `git init` if it isn't a repo yet; env vars override `config.json`.
 3. (GitHub) `gh repo create zuar-portal-state --private`, add it as `origin`, set `PORTAL_VC_PUSH=1`.
 4. Restart the MCP, then run **`snapshot_portal`** once to seed the baseline.
+
+**Fresh machine, no git setup `[2.3.0]`:** instead of configuring `gh`/SSH/credential helpers, put the
+remote + a token in the `vc` section and the server wires up the authenticated remote itself:
+```json
+"vc": { "dir": "/abs/path/zuar-portal-state", "push": true,
+        "remote": "origin", "remote_url": "https://github.com/you/zuar-portal-state.git",
+        "token": "<PAT with repo scope>" }
+```
+The token is applied as a git auth header in the repo's local config, **never logged**; `config.json`
+is gitignored. If `token` is omitted, the server uses the machine's existing git auth.
 
 Details + the revert workflow: [07 · Version Control](07-version-control.md).
 

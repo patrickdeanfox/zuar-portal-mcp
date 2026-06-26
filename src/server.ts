@@ -53,7 +53,7 @@ import {
 
 // ── Top-level config ────────────────────────────────────────────────────────
 const SERVER_NAME = "zuar-portal-mcp-server";
-const SERVER_VERSION = "2.2.0";
+const SERVER_VERSION = "2.3.0";
 const ONLY_BLOCK_TYPE = "html";
 const SAMPLE_ROW_LIMIT_DEFAULT = 5;
 const SAMPLE_ROW_LIMIT_MAX = 50;

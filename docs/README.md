@@ -5,11 +5,10 @@ end to end: author HTML blocks, build pages, manage datasources/queries/themes/u
 and (new in 2.2.0) keep a git-versioned, revertible history of every content change — all through
 natural language.
 
-> **Versions:** these docs describe the MCP server at **v2.2.0**, which targets a **Zuar Portal 1.19**
-> instance (the in-block data API is the "v1.18+" shape — both terms refer to the same current
-> contract). Surfaces added in 2.2.0 are flagged **`[2.2.0]`**; they're implemented on the working
-> branch `feat/design-system-and-portal-vc` and become active in your **running** server only after
-> `npm run build` + `.mcpb` repack + MCP restart (until then the live server behaves as v2.1.0).
+> **Versions:** these docs describe the MCP server at **v2.3.0** (current on `main`), targeting a
+> **Zuar Portal 1.19** instance (the in-block data API is the stable "v1.18+" shape). Feature flags
+> like **`[2.2.0]`** / **`[2.3.0]`** mark the release a surface landed in. New tools/rules/version-control
+> take effect in your **running** server only after `npm run build` + `.mcpb` repack + MCP restart.
 
 ## Start here
 - **New to the server?** → [01 · Overview](01-overview.md)

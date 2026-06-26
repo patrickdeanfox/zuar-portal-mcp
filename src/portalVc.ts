@@ -32,9 +32,18 @@ export function vcStatus(): {
   dir: string | null;
   push: boolean;
   remote: string;
+  remoteUrl: string | null;
+  tokenConfigured: boolean;
 } {
   const c = loadVcConfig();
-  return { enabled: c.dir !== null, dir: c.dir, push: c.push, remote: c.remote };
+  return {
+    enabled: c.dir !== null,
+    dir: c.dir,
+    push: c.push,
+    remote: c.remote,
+    remoteUrl: c.remoteUrl, // a repo URL, not a secret
+    tokenConfigured: c.token !== null, // never expose the token itself
+  };
 }
 
 // ── git helpers ───────────────────────────────────────────────────────────────
@@ -52,7 +61,7 @@ function ensureRepo(dir: string): void {
   if (repoReady) return;
   fs.mkdirSync(dir, { recursive: true });
   if (!fs.existsSync(path.join(dir, ".git"))) {
-    git(dir, ["init", "-q"]);
+    try { git(dir, ["init", "-q", "-b", "main"]); } catch { git(dir, ["init", "-q"]); }
     try { git(dir, ["config", "user.email", "zuar-portal-mcp@local"]); } catch { /* noop */ }
     try { git(dir, ["config", "user.name", "zuar-portal-mcp"]); } catch { /* noop */ }
     const readme = path.join(dir, "README.md");
@@ -74,10 +83,37 @@ function rel(kind: string, id: string): string {
   return `${safe(kind)}/${safe(id)}.json`; // forward slashes (also valid for `git show`)
 }
 
+// Configure the push remote + HTTPS auth from config (idempotent). The token is applied as a
+// git http auth header in the repo's local config; it is NEVER logged or printed.
+function ensureRemote(dir: string): void {
+  const c = loadVcConfig();
+  if (!c.remoteUrl) return;
+  const remotes = git(dir, ["remote"]).split(/\s+/).filter(Boolean);
+  if (remotes.includes(c.remote)) git(dir, ["remote", "set-url", c.remote, c.remoteUrl]);
+  else git(dir, ["remote", "add", c.remote, c.remoteUrl]);
+  if (c.token && /^https:\/\//i.test(c.remoteUrl)) {
+    const basic = Buffer.from(`${c.username}:${c.token}`).toString("base64");
+    git(dir, ["config", "http.extraHeader", `AUTHORIZATION: Basic ${basic}`]);
+  }
+}
+
+// Strip any token / auth header out of a message before logging.
+function redactToken(msg: string): string {
+  const c = loadVcConfig();
+  let out = msg || "";
+  if (c.token) out = out.split(c.token).join("***");
+  return out.replace(/Basic\s+[A-Za-z0-9+/=]+/g, "Basic ***");
+}
+
 function maybePush(dir: string): void {
   const c = loadVcConfig();
   if (!c.push) return;
-  try { git(dir, ["push", c.remote, "HEAD"]); } catch (e) { log("vc: push failed", (e as Error).message); }
+  try {
+    ensureRemote(dir);
+    git(dir, ["push", "-u", c.remote, "HEAD"]);
+  } catch (e) {
+    log("vc: push failed", redactToken((e as Error).message));
+  }
 }
 
 function writeFile(dir: string, relPath: string, data: unknown): void {

@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "zuar-portal-mcp-server",
   "display_name": "Zuar Portal",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Create and manage Zuar Portal blocks, pages, data sources, queries, users and more with Claude.",
   "long_description": "An MCP server that lets Claude operate a Zuar Portal (zPortal) end to end. Typed, validated tools author HTML blocks; a generic resource layer covers layouts (pages), datasources, queries, db_modifications, partials, themes, users, groups, permissions, access policies, API keys, credentials, snippets, translations, dashboards, tags and system records. Action tools handle sample-row previews, query execution, database modifications, password changes, user group/permission assignment and config. A layered write-safety model keeps low-risk content edits on by default while data (SQL) and admin (users/security) writes stay opt-in.",
   "author": {
@@ -26,6 +26,9 @@
         "PORTAL_VC_DIR": "${user_config.portal_vc_dir}",
         "PORTAL_VC_PUSH": "${user_config.portal_vc_push}",
         "PORTAL_VC_REMOTE": "${user_config.portal_vc_remote}",
+        "PORTAL_VC_REMOTE_URL": "${user_config.portal_vc_remote_url}",
+        "PORTAL_VC_TOKEN": "${user_config.portal_vc_token}",
+        "PORTAL_VC_USERNAME": "${user_config.portal_vc_username}",
         "PORTAL_DESIGN_FILE": "${user_config.portal_design_file}"
       }
     }
@@ -142,6 +145,26 @@
       "description": "Git remote name to push to when 'Push version control' is on.",
       "required": false,
       "default": "origin"
+    },
+    "portal_vc_remote_url": {
+      "type": "string",
+      "title": "Version-control remote URL",
+      "description": "Git remote URL for the state repo (e.g. https://github.com/you/zuar-portal-state.git). The server configures the remote automatically.",
+      "required": false
+    },
+    "portal_vc_token": {
+      "type": "string",
+      "title": "Version-control git token",
+      "description": "Personal access token for HTTPS push to the remote URL (repo scope). Stored locally and applied as a git auth header; never logged. Leave blank to use your machine's existing git auth (gh / credential helper / SSH).",
+      "sensitive": true,
+      "required": false
+    },
+    "portal_vc_username": {
+      "type": "string",
+      "title": "Version-control git username",
+      "description": "HTTPS basic-auth username paired with the token (default x-access-token).",
+      "required": false,
+      "default": "x-access-token"
     },
     "portal_design_file": {
       "type": "string",
