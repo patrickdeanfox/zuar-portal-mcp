@@ -121,6 +121,8 @@ interface ConfigSource {
 
 let cachedProject: ConfigSource | null = null;
 let cachedBundle: ConfigSource | null = null;
+let cachedGating: ToolGating | null = null;
+let cachedAudit: string | null | undefined = undefined; // undefined = not yet resolved
 
 function parseJsonFile(file: string): Record<string, unknown> | null {
   try {
@@ -185,6 +187,8 @@ export function resetConfigCache(): void {
   cachedProject = null;
   cachedBundle = null;
   cachedVc = null;
+  cachedGating = null;
+  cachedAudit = undefined;
 }
 
 /** The path where init_project_config writes a new project config (under the CWD). */
@@ -194,7 +198,7 @@ export function projectConfigTarget(): string {
 
 // Pull a typed section ("portal" | "vc") out of a raw config object. Tolerates a
 // flat file where the portal fields live at the top level (legacy convenience).
-function section(raw: Record<string, unknown>, key: "portal" | "vc"): Record<string, unknown> {
+function section(raw: Record<string, unknown>, key: "portal" | "vc" | "tools"): Record<string, unknown> {
   const sub = raw[key];
   if (sub && typeof sub === "object" && !Array.isArray(sub)) return sub as Record<string, unknown>;
   if (key === "portal") return raw; // flat fallback: {url, apiKey, userId} at top level
@@ -204,6 +208,126 @@ function section(raw: Record<string, unknown>, key: "portal" | "vc"): Record<str
 function projStr(sec: Record<string, unknown>, k: string): string | undefined {
   const v = sec[k];
   return typeof v === "string" && v.trim() ? v.trim() : undefined;
+}
+
+// ── Tool gating (capability scoping) ──────────────────────────────────────────
+// Independent of the write-safety flags (which gate write EXECUTION): an operator
+// can drop whole GROUPS of tools — or individual tools — from the surface entirely
+// (e.g. hide all user/permission tools). Default with no policy: every tool is
+// registered (byte-identical surface to before). This only ever removes tools.
+export type ToolMode = "denylist" | "allowlist";
+export interface ToolGating {
+  mode: ToolMode;
+  enable: Set<string>; // group or tool names
+  disable: Set<string>; // group or tool names (always win)
+  source: "config" | "env" | "default";
+}
+
+// Parse a comma/space separated list (or array) of names, lowercased.
+function splitNames(v: unknown): string[] {
+  const raw =
+    typeof v === "string"
+      ? v.split(/[,\s]+/)
+      : Array.isArray(v)
+        ? v.filter((x) => typeof x === "string")
+        : [];
+  return raw.map((s) => String(s).trim().toLowerCase()).filter(Boolean);
+}
+
+/**
+ * Resolve the tool-gating policy with project > env > bundle precedence.
+ * Project config `tools` section: { "disable": ["users","config"], "enable": [...], "mode": "allowlist" }.
+ * Env: PORTAL_DISABLE_TOOLS (denylist), PORTAL_ENABLE_TOOLS (setting it flips to allowlist),
+ * PORTAL_TOOLS_MODE ("allowlist"|"denylist"). Names may be GROUPS or individual TOOLS.
+ */
+export function loadToolGating(): ToolGating {
+  if (cachedGating !== null) return cachedGating;
+  const proj = section(discoverProjectConfig().raw, "tools");
+  const bundle = section(discoverBundleConfig().raw, "tools");
+  const enable = new Set<string>([
+    ...splitNames(proj.enable ?? bundle.enable),
+    ...splitNames(process.env.PORTAL_ENABLE_TOOLS),
+  ]);
+  const disable = new Set<string>([
+    ...splitNames(proj.disable ?? bundle.disable),
+    ...splitNames(process.env.PORTAL_DISABLE_TOOLS),
+  ]);
+  const explicitMode = (
+    (typeof proj.mode === "string" ? proj.mode : process.env.PORTAL_TOOLS_MODE) ?? ""
+  )
+    .toString()
+    .trim()
+    .toLowerCase();
+  const mode: ToolMode =
+    explicitMode === "allowlist" || explicitMode === "denylist"
+      ? (explicitMode as ToolMode)
+      : enable.size > 0
+        ? "allowlist"
+        : "denylist";
+  const source: ToolGating["source"] =
+    proj.enable !== undefined || proj.disable !== undefined || proj.mode !== undefined
+      ? "config"
+      : enable.size > 0 || disable.size > 0
+        ? "env"
+        : "default";
+  cachedGating = { mode, enable, disable, source };
+  return cachedGating;
+}
+
+/**
+ * Is a tool (belonging to `group`) part of the active surface? Pure.
+ * Deny always wins; allowlist mode is default-OFF (only listed groups/tools);
+ * denylist mode is default-ON. Always-available introspection tools bypass this
+ * at the registration proxy, not here.
+ */
+export function toolEnabled(name: string, group: string): boolean {
+  const g = loadToolGating();
+  const n = name.toLowerCase();
+  const grp = group.toLowerCase();
+  if (g.disable.has(n) || g.disable.has(grp)) return false; // deny always wins
+  if (g.mode === "allowlist") return g.enable.has(n) || g.enable.has(grp);
+  return true; // denylist mode → default-on
+}
+
+// ── Audit log (opt-in, append-only) ───────────────────────────────────────────
+// When configured (env PORTAL_AUDIT_LOG, or a project `audit` path/section), every
+// write the MCP performs appends one JSON line of OP METADATA (op/kind/id/domain) —
+// never payload bodies or secrets. Disabled by default; failures are swallowed so a
+// bad path can never break a write. Complements the git VC mirror (which covers
+// content writes with rollback); audit also captures data/admin actions.
+export function loadAuditPath(): string | null {
+  if (cachedAudit !== undefined) return cachedAudit;
+  const fromCfg = (raw: Record<string, unknown>): string | undefined => {
+    const a = raw.audit;
+    if (typeof a === "string" && a.trim()) return a.trim();
+    if (a && typeof a === "object") {
+      const logPath = (a as Record<string, unknown>).log ?? (a as Record<string, unknown>).path;
+      if (typeof logPath === "string" && logPath.trim()) return logPath.trim();
+    }
+    return undefined;
+  };
+  const p =
+    fromCfg(discoverProjectConfig().raw) ??
+    envStr("PORTAL_AUDIT_LOG") ??
+    fromCfg(discoverBundleConfig().raw);
+  cachedAudit = p ? path.resolve(p) : null;
+  return cachedAudit;
+}
+
+/** Append one audit entry (best-effort; never throws). Metadata only — no payloads/secrets. */
+export function appendAudit(entry: Record<string, unknown>): void {
+  const p = loadAuditPath();
+  if (!p) return;
+  try {
+    fs.appendFileSync(p, JSON.stringify({ ts: new Date().toISOString(), ...entry }) + "\n");
+  } catch (e) {
+    log("audit: append failed", (e as Error).message);
+  }
+}
+
+export function auditStatus(): { enabled: boolean; path: string | null } {
+  const p = loadAuditPath();
+  return { enabled: p !== null, path: p };
 }
 
 // ── Version-control configuration ─────────────────────────────────────────────

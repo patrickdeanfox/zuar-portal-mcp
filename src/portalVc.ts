@@ -17,7 +17,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { log, loadVcConfig } from "./config.js";
+import { log, loadVcConfig, appendAudit } from "./config.js";
 
 /** Absolute path of the VC repo, or null when version control is disabled. */
 export function vcDir(): string | null {
@@ -132,6 +132,8 @@ function commitIfChanged(dir: string, message: string): boolean {
 // ── Public write hooks (best-effort) ──────────────────────────────────────────
 /** Mirror a create/update of a content record and commit. */
 export function recordWrite(kind: string, id: unknown, action: string, data: unknown): void {
+  // Audit every content write (metadata only), independent of whether VC is enabled.
+  appendAudit({ domain: "content", op: action, kind, id: id === undefined ? undefined : String(id) });
   const dir = vcDir();
   if (!dir || typeof id !== "string" || !id) return;
   try {
@@ -147,6 +149,7 @@ export function recordWrite(kind: string, id: unknown, action: string, data: unk
 
 /** Mirror a delete of a content record and commit. */
 export function recordDelete(kind: string, id: unknown): void {
+  appendAudit({ domain: "content", op: "delete", kind, id: id === undefined ? undefined : String(id) });
   const dir = vcDir();
   if (!dir || typeof id !== "string" || !id) return;
   try {

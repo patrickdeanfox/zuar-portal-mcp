@@ -21,7 +21,7 @@
  * admin writes are opt-in via env flags.
  */
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { request, resetSession } from "./portalClient.js";
 import {
@@ -29,6 +29,12 @@ import {
   activeConfigInfo,
   projectConfigTarget,
   resetConfigCache,
+  loadSafetyConfig,
+  loadToolGating,
+  toolEnabled,
+  appendAudit,
+  auditStatus,
+  log,
 } from "./config.js";
 import fs from "node:fs";
 import path from "node:path";
@@ -60,11 +66,34 @@ import {
 
 // ── Top-level config ────────────────────────────────────────────────────────
 const SERVER_NAME = "zuar-portal-mcp-server";
-const SERVER_VERSION = "2.4.0";
+const SERVER_VERSION = "2.5.0";
 const ONLY_BLOCK_TYPE = "html";
 const SAMPLE_ROW_LIMIT_DEFAULT = 5;
 const SAMPLE_ROW_LIMIT_MAX = 50;
+const LIST_PAGE_MAX = 500; // pagination cap for list_resource / list_blocks
 const BLOCK_DOMAIN = "content" as const; // block writes are content-risk
+
+// Server-level guidance surfaced to the client in the MCP initialize response.
+// Orients the model on how to use this server before it makes any call.
+const SERVER_INSTRUCTIONS = [
+  "Zuar Portal MCP — operate a Zuar Portal (zPortal) end to end: author HTML blocks, build pages,",
+  "manage datasources/queries/themes/users, explore data, and version-control content.",
+  "",
+  "Start here: call active_config to confirm which portal you're pointed at (run init_project_config",
+  "or the setup_zuar_project prompt if it's not configured), and get_capabilities to see which tool",
+  "groups and write permissions are enabled. get_version confirms connectivity.",
+  "",
+  "Authoring blocks: READ the zportal://guide/* resources first (block-structure, currentblock,",
+  "conventions, design-system, charting). Blocks are HTML-only; put HTML+JS in json_data.html and CSS",
+  "in css, bind data via ui_queries (not a `data` field), read it from currentBlock.queryResults[n],",
+  "and run validate_block before create_block/update_block. Never put a literal `$` next to a quote or",
+  "digit (it blanks the block) — format currency with toLocaleString.",
+  "",
+  "Write safety: content writes (blocks/pages/queries/themes) are ON by default; data (SQL) and admin",
+  "(users/security) writes are OPT-IN env flags and are reported by get_capabilities. Destructive tools",
+  "(deletes, user-membership replacement, db modifications) require confirm:true. When a write is",
+  "blocked, the error names the flag to set. Prefer execute_query/list_resource limits to stay cheap.",
+].join("\n");
 
 // ── Pure helpers ──────────────────────────────────────────────────────────────
 type ToolResult = {
@@ -84,8 +113,73 @@ function ok(payload: unknown): ToolResult {
   };
 }
 
+// Parse "Portal GET /path failed: HTTP 404 - ..." style messages into a machine-readable
+// envelope so clients can branch on status/retriable without scraping the text.
+function errorEnvelope(message: string): Record<string, unknown> {
+  const status = /HTTP (\d{3})/.exec(message)?.[1];
+  const http = status ? Number(status) : undefined;
+  return {
+    error: message,
+    http_status: http,
+    // 401/403 → re-auth/permission; 429/5xx → transient; else not retriable.
+    retriable: http !== undefined && (http === 429 || http >= 500),
+    is_auth: http === 401 || http === 403,
+  };
+}
+
 function fail(message: string): ToolResult {
-  return { content: [{ type: "text", text: message }], isError: true };
+  return {
+    content: [{ type: "text", text: message }],
+    structuredContent: errorEnvelope(message),
+    isError: true,
+  };
+}
+
+// Best-effort audit of a write action (no-op unless an audit log is configured).
+// Records metadata only — never payload bodies or secrets.
+function audit(domain: "content" | "data" | "admin", op: string, kind: string, id?: unknown): void {
+  appendAudit({ domain, op, kind, id: id === undefined ? undefined : String(id) });
+}
+
+// Normalize a portal list response to an array (handles {result}/{items}/{data}/{results}/bare array).
+function asCollection(res: unknown): unknown[] {
+  if (Array.isArray(res)) return res;
+  if (res && typeof res === "object") {
+    const o = res as Record<string, unknown>;
+    for (const k of ["result", "items", "data", "results"]) {
+      if (Array.isArray(o[k])) return o[k] as unknown[];
+    }
+  }
+  return [];
+}
+
+// Apply offset/limit/only_names to a fetched collection and return a paged envelope.
+function paginate(
+  resource: string,
+  res: unknown,
+  opts: { limit?: number; offset?: number; only_names?: boolean; idLabel?: string }
+): Record<string, unknown> {
+  const items = asCollection(res);
+  const total = items.length;
+  const offset = opts.offset ?? 0;
+  const limit = Math.min(opts.limit ?? LIST_PAGE_MAX, LIST_PAGE_MAX);
+  let page: unknown[] = items.slice(offset, offset + limit);
+  if (opts.only_names) {
+    const idKey = opts.idLabel ?? "id";
+    page = page.map((r) => {
+      const rec = (r ?? {}) as Record<string, unknown>;
+      return { id: rec[idKey] ?? rec.id, name: rec.name ?? rec.title ?? null };
+    });
+  }
+  return {
+    resource,
+    total,
+    offset,
+    limit,
+    returned: page.length,
+    truncated: offset + page.length < total,
+    records: page,
+  };
 }
 
 // Convert a {name: value} map to the portal's [{name, value}] SQLParameter list.
@@ -334,9 +428,76 @@ const resourceEnum = z
   .enum(RESOURCE_KEYS)
   .describe("Resource type. Call describe_resource for fields and supported verbs.");
 
+// ── Tool gating (capability scoping) ──────────────────────────────────────────
+// Every tool belongs to a group; an operator can disable whole groups or single
+// tools (config.ts loadToolGating / toolEnabled). The map is the single source of
+// truth for group membership — keep it in sync when adding a tool.
+const TOOL_GROUPS: Record<string, string> = {
+  // discovery (read-only introspection)
+  get_version: "discovery", get_rules: "discovery", describe_resource: "discovery", get_me: "discovery",
+  // blocks (typed HTML authoring + page placement)
+  list_blocks: "blocks", get_block: "blocks", validate_block: "blocks", create_block: "blocks",
+  update_block: "blocks", delete_block: "blocks", bind_block_query: "blocks",
+  add_block_to_page: "blocks", remove_block_from_page: "blocks", set_page_blocks: "blocks",
+  // resources (generic CRUD)
+  list_resource: "resources", get_resource: "resources", create_resource: "resources",
+  update_resource: "resources", delete_resource: "resources",
+  // data (SQL / datasources / db modifications)
+  fetch_sample_rows: "data", profile_datasource: "data", execute_query: "data", run_db_modification: "data",
+  // users (users / groups / permissions / passwords)
+  get_user_groups: "users", set_user_groups: "users", get_user_permissions: "users",
+  set_user_permissions: "users", change_password: "users", update_me: "users",
+  // config (portal configuration document)
+  get_config: "config", update_config: "config",
+  // vc (git version control of content)
+  vc_status: "vc", snapshot_portal: "vc", vc_log: "vc", restore_resource: "vc",
+  // setup (per-project credential bootstrap)
+  active_config: "setup", init_project_config: "setup",
+  // meta (always-available introspection)
+  get_capabilities: "meta",
+};
+// Introspection/setup tools that stay available even when their group is gated off,
+// so an operator can always see and fix the configuration.
+const ALWAYS_ON = new Set<string>(["get_capabilities", "active_config"]);
+
+function groupOf(name: string): string {
+  return TOOL_GROUPS[name] ?? "meta";
+}
+function toolIsEnabled(name: string): boolean {
+  return ALWAYS_ON.has(name) || toolEnabled(name, groupOf(name));
+}
+
+// Wrap the McpServer so registerTool() silently skips disabled tools, WITHOUT
+// editing every call site. registerResource/registerPrompt and all other methods
+// pass straight through to the real server (bound so SDK private state is intact).
+function gateServer(real: McpServer): McpServer {
+  return new Proxy(real, {
+    get(target, prop, receiver) {
+      if (prop === "registerTool") {
+        return (name: string, ...rest: unknown[]) => {
+          if (toolIsEnabled(name)) {
+            return (target.registerTool as (...a: unknown[]) => unknown)(name, ...rest);
+          }
+          log("tool disabled by gating:", name, `(group ${groupOf(name)})`);
+          // Return a harmless stub; call sites ignore registerTool's return value.
+          return { remove() {}, enable() {}, disable() {}, update() {} };
+        };
+      }
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  }) as McpServer;
+}
+
 // ── Server construction ───────────────────────────────────────────────────────
 export function buildServer(): McpServer {
-  const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
+  const real = new McpServer(
+    { name: SERVER_NAME, version: SERVER_VERSION },
+    { instructions: SERVER_INSTRUCTIONS }
+  );
+  // Registration goes through the gate (skips disabled tools); connect()/notifications
+  // use the real instance.
+  const server = gateServer(real);
 
   registerBlockTools(server);
   registerResourceTools(server);
@@ -346,7 +507,7 @@ export function buildServer(): McpServer {
   registerResources(server);
   registerPrompts(server);
 
-  return server;
+  return real;
 }
 
 // ── Block tools (typed + validated) ───────────────────────────────────────────
@@ -357,20 +518,33 @@ function registerBlockTools(server: McpServer): void {
     {
       title: "List portal blocks",
       description:
-        "List blocks on the portal. Optionally restrict to specific block IDs, or return names only.",
+        "List blocks on the portal. Optionally restrict to specific block IDs, project to id+name " +
+        "(only_names), or paginate (limit/offset) — a portal with hundreds of blocks can otherwise " +
+        "blow the context budget.",
       inputSchema: {
         block_ids: z.array(z.string()).optional().describe("Filter to these block UUIDs."),
-        only_names: z.boolean().optional().describe("Return only id+name pairs."),
+        only_names: z.boolean().optional().describe("Project each block to { id, name } (client-side, reliable)."),
+        limit: z.number().int().min(1).max(LIST_PAGE_MAX).optional().describe(`Max blocks to return (max ${LIST_PAGE_MAX}).`),
+        offset: z.number().int().min(0).optional().describe("Blocks to skip (pagination)."),
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     async (args) => {
       try {
+        const paginating = args.limit !== undefined || args.offset !== undefined || args.only_names === true;
         const qs = new URLSearchParams();
         (args.block_ids ?? []).forEach((id) => qs.append("block_ids[]", id));
-        if (args.only_names) qs.set("only_names", "true");
         const suffix = qs.toString() ? `?${qs.toString()}` : "";
-        return ok(await request("GET", `/api/blocks${suffix}`));
+        const res = await request("GET", `/api/blocks${suffix}`);
+        if (!paginating) return ok(res);
+        return ok(
+          paginate("block", res, {
+            limit: args.limit,
+            offset: args.offset,
+            only_names: args.only_names,
+            idLabel: "id",
+          })
+        );
       } catch (e) {
         return fail((e as Error).message);
       }
@@ -490,8 +664,13 @@ function registerBlockTools(server: McpServer): void {
     "delete_block",
     {
       title: "Delete a block",
-      description: "Delete a block by UUID. This cannot be undone from this server.",
-      inputSchema: { block_id: z.string().min(1).describe("Block UUID to delete.") },
+      description:
+        "Delete a block by UUID. Requires confirm:true. If version control is on (vc_status), the " +
+        "deletion is committed and can be reverted with restore_resource; otherwise it cannot be undone.",
+      inputSchema: {
+        block_id: z.string().min(1).describe("Block UUID to delete."),
+        confirm: z.boolean().describe("Must be true to actually delete — guards against accidental loss."),
+      },
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -503,6 +682,7 @@ function registerBlockTools(server: McpServer): void {
       try {
         const reason = blockReason(BLOCK_DOMAIN);
         if (reason) return fail(reason);
+        if (args.confirm !== true) return fail("Refusing to delete: set confirm=true to delete this block.");
         const r = await request("DELETE", `/api/blocks/${encodeURIComponent(args.block_id)}`);
         recordDelete("block", args.block_id);
         return ok(r ?? { deleted: args.block_id });
@@ -782,6 +962,10 @@ function registerBlockTools(server: McpServer): void {
           .boolean()
           .optional()
           .describe("Clear the page's existing grid blocks before placing (default false)."),
+        confirm: z
+          .boolean()
+          .optional()
+          .describe("Required to be true ONLY when replace=true (rebuilding the page wipes its current blocks)."),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
@@ -789,6 +973,9 @@ function registerBlockTools(server: McpServer): void {
       try {
         const reason = blockReason(BLOCK_DOMAIN);
         if (reason) return fail(reason);
+        if (args.replace && args.confirm !== true) {
+          return fail("Refusing to rebuild the page: replace=true clears existing blocks — set confirm=true.");
+        }
         const desc = getDescriptor("layout");
         if (!desc) return fail("Layout resource not available on this server.");
         const layout = await request<Record<string, any>>(
@@ -856,7 +1043,19 @@ function registerResourceTools(server: McpServer): void {
         query: z
           .record(z.string(), z.any())
           .optional()
-          .describe("Optional query-string params, e.g. { only_names: true }."),
+          .describe("Optional query-string params passed to the portal, e.g. { only_names: true }."),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(LIST_PAGE_MAX)
+          .optional()
+          .describe(`Max records to return (paginates client-side; max ${LIST_PAGE_MAX}). A big collection can otherwise blow the context budget.`),
+        offset: z.number().int().min(0).optional().describe("Records to skip (pagination)."),
+        only_names: z
+          .boolean()
+          .optional()
+          .describe("Project each record to just { id, name } — cheap discovery, works regardless of portal support."),
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
@@ -864,7 +1063,19 @@ function registerResourceTools(server: McpServer): void {
       try {
         const desc = getDescriptor(args.resource);
         if (!desc) return fail(`Unknown resource "${args.resource}".`);
-        return ok(await listResource(desc, args.query));
+        const res = await listResource(desc, args.query);
+        // Back-compat: with no pagination/projection args, return the raw portal response.
+        if (args.limit === undefined && args.offset === undefined && !args.only_names) {
+          return ok(res);
+        }
+        return ok(
+          paginate(args.resource, res, {
+            limit: args.limit,
+            offset: args.offset,
+            only_names: args.only_names,
+            idLabel: desc.idLabel,
+          })
+        );
       } catch (e) {
         return fail((e as Error).message);
       }
@@ -920,7 +1131,12 @@ function registerResourceTools(server: McpServer): void {
       try {
         const desc = getDescriptor(args.resource);
         if (!desc) return fail(`Unknown resource "${args.resource}".`);
-        return ok(await createResource(desc, args.body));
+        const out = await createResource(desc, args.body);
+        // Content writes are audited at the VC chokepoint; audit data/admin here.
+        if (desc.domain !== "content") {
+          audit(desc.domain, "create", desc.key, (out as Record<string, unknown>)?.[desc.idLabel] ?? (out as Record<string, unknown>)?.id);
+        }
+        return ok(out);
       } catch (e) {
         return fail((e as Error).message);
       }
@@ -952,7 +1168,9 @@ function registerResourceTools(server: McpServer): void {
       try {
         const desc = getDescriptor(args.resource);
         if (!desc) return fail(`Unknown resource "${args.resource}".`);
-        return ok(await updateResource(desc, args.id, args.body));
+        const out = await updateResource(desc, args.id, args.body);
+        if (desc.domain !== "content") audit(desc.domain, "update", desc.key, args.id);
+        return ok(out);
       } catch (e) {
         return fail((e as Error).message);
       }
@@ -965,11 +1183,13 @@ function registerResourceTools(server: McpServer): void {
     {
       title: "Delete a resource record",
       description:
-        "Delete a record by id (or name, for tags). Cannot be undone. Same write gating as " +
-        "create_resource — the record's risk domain must be enabled.",
+        "Delete a record by id (or name, for tags). Requires confirm:true. Same write gating as " +
+        "create_resource — the record's risk domain must be enabled. Content records can be reverted " +
+        "with restore_resource when version control is on; others cannot be undone.",
       inputSchema: {
         resource: resourceEnum,
         id: z.string().min(1).describe("Record id to delete."),
+        confirm: z.boolean().describe("Must be true to actually delete — guards against accidental loss."),
       },
       annotations: {
         readOnlyHint: false,
@@ -982,7 +1202,12 @@ function registerResourceTools(server: McpServer): void {
       try {
         const desc = getDescriptor(args.resource);
         if (!desc) return fail(`Unknown resource "${args.resource}".`);
-        return ok(await deleteResource(desc, args.id));
+        if (args.confirm !== true) {
+          return fail(`Refusing to delete: set confirm=true to delete this ${args.resource}.`);
+        }
+        const out = await deleteResource(desc, args.id);
+        if (desc.domain !== "content") audit(desc.domain, "delete", desc.key, args.id);
+        return ok(out);
       } catch (e) {
         return fail((e as Error).message);
       }
@@ -1224,7 +1449,9 @@ function registerActionTools(server: McpServer): void {
         const body: Record<string, unknown> = { db_modifications: [mod] };
         if (args.autocommit !== undefined) body.autocommit = args.autocommit;
         if (args.ignore_sql_errors !== undefined) body.ignore_sql_errors = args.ignore_sql_errors;
-        return ok(await request("POST", "/api/db_modifications/run", body));
+        const out = await request("POST", "/api/db_modifications/run", body);
+        audit("data", "run_db_modification", args.name);
+        return ok(out);
       } catch (e) {
         return fail((e as Error).message);
       }
@@ -1258,6 +1485,7 @@ function registerActionTools(server: McpServer): void {
           old_password: args.old_password,
           new_password: args.new_password,
         });
+        audit("admin", "change_password", "self");
         return ok({ status: "password changed" });
       } catch (e) {
         return fail((e as Error).message);
@@ -1289,11 +1517,12 @@ function registerActionTools(server: McpServer): void {
     {
       title: "Set a user's groups",
       description:
-        "Replace the full set of groups for a user. Requires admin writes enabled " +
-        "(PORTAL_ALLOW_ADMIN_WRITES=1).",
+        "Replace the full set of groups for a user (full-replace, not additive). Requires admin writes " +
+        "enabled (PORTAL_ALLOW_ADMIN_WRITES=1) and confirm:true.",
       inputSchema: {
         user_id: z.string().min(1).describe("User UUID."),
         group_ids: z.array(z.string()).describe("Complete list of group ids the user should have."),
+        confirm: z.boolean().describe("Must be true — this REPLACES the user's entire group membership."),
       },
       annotations: {
         readOnlyHint: false,
@@ -1306,11 +1535,14 @@ function registerActionTools(server: McpServer): void {
       try {
         const reason = blockReason("admin");
         if (reason) return fail(reason);
-        return ok(
-          await request("PUT", `/auth/users/${encodeURIComponent(args.user_id)}/groups`, {
-            groups: args.group_ids,
-          })
-        );
+        if (args.confirm !== true) {
+          return fail("Refusing: set confirm=true — this replaces the user's entire group membership.");
+        }
+        const out = await request("PUT", `/auth/users/${encodeURIComponent(args.user_id)}/groups`, {
+          groups: args.group_ids,
+        });
+        audit("admin", "set_user_groups", args.user_id);
+        return ok(out);
       } catch (e) {
         return fail((e as Error).message);
       }
@@ -1343,13 +1575,14 @@ function registerActionTools(server: McpServer): void {
     {
       title: "Set a user's permissions",
       description:
-        "Replace the full set of permissions for a user. Requires admin writes enabled " +
-        "(PORTAL_ALLOW_ADMIN_WRITES=1).",
+        "Replace the full set of permissions for a user (full-replace, not additive). Requires admin " +
+        "writes enabled (PORTAL_ALLOW_ADMIN_WRITES=1) and confirm:true.",
       inputSchema: {
         user_id: z.string().min(1).describe("User UUID."),
         permission_ids: z
           .array(z.string())
           .describe("Complete list of permission ids the user should have."),
+        confirm: z.boolean().describe("Must be true — this REPLACES the user's entire permission set."),
       },
       annotations: {
         readOnlyHint: false,
@@ -1362,11 +1595,14 @@ function registerActionTools(server: McpServer): void {
       try {
         const reason = blockReason("admin");
         if (reason) return fail(reason);
-        return ok(
-          await request("PUT", `/auth/users/${encodeURIComponent(args.user_id)}/permissions`, {
-            permissions: args.permission_ids,
-          })
-        );
+        if (args.confirm !== true) {
+          return fail("Refusing: set confirm=true — this replaces the user's entire permission set.");
+        }
+        const out = await request("PUT", `/auth/users/${encodeURIComponent(args.user_id)}/permissions`, {
+          permissions: args.permission_ids,
+        });
+        audit("admin", "set_user_permissions", args.user_id);
+        return ok(out);
       } catch (e) {
         return fail((e as Error).message);
       }
@@ -1418,7 +1654,9 @@ function registerActionTools(server: McpServer): void {
         if (args.fullname !== undefined) body.fullname = args.fullname;
         if (args.email !== undefined) body.email = args.email;
         if (Object.keys(body).length === 0) return fail("Provide fullname and/or email to update.");
-        return ok(await request("PATCH", "/auth/me", body));
+        const out = await request("PATCH", "/auth/me", body);
+        audit("admin", "update_me", "self");
+        return ok(out);
       } catch (e) {
         return fail((e as Error).message);
       }
@@ -1470,7 +1708,9 @@ function registerActionTools(server: McpServer): void {
         if (reason) return fail(reason);
         const body: Record<string, unknown> = { path: args.path, value: args.value };
         if (args.merge !== undefined) body.merge = args.merge;
-        return ok(await request("PUT", "/api/config", body));
+        const out = await request("PUT", "/api/config", body);
+        audit("admin", "update_config", args.path.join("."));
+        return ok(out);
       } catch (e) {
         return fail((e as Error).message);
       }
@@ -1478,9 +1718,65 @@ function registerActionTools(server: McpServer): void {
   );
 }
 
-// ── Version-control tools (optional; enabled by PORTAL_VC_DIR) ─────────────────
 // ── Config tools (per-project setup) ──────────────────────────────────────────
 function registerConfigTools(server: McpServer): void {
+  // get_capabilities — what's enabled + the current posture (always available).
+  server.registerTool(
+    "get_capabilities",
+    {
+      title: "Server capabilities & posture",
+      description:
+        "Report what this server can currently do: which tool GROUPS and tools are enabled vs disabled, " +
+        "the write-safety posture (read-only / data / admin), the active config source + portal, " +
+        "version-control status, and whether audit logging is on. Call this to orient before acting — it " +
+        "stays available even when other tool groups are gated off. All secrets are redacted.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async () => {
+      try {
+        const groups: Record<string, { enabled: string[]; disabled: string[] }> = {};
+        const enabled: string[] = [];
+        const disabled: string[] = [];
+        for (const [name, group] of Object.entries(TOOL_GROUPS)) {
+          const bucket = (groups[group] ??= { enabled: [], disabled: [] });
+          if (toolIsEnabled(name)) {
+            bucket.enabled.push(name);
+            enabled.push(name);
+          } else {
+            bucket.disabled.push(name);
+            disabled.push(name);
+          }
+        }
+        const gating = loadToolGating();
+        const safety = loadSafetyConfig();
+        return ok({
+          server: { name: SERVER_NAME, version: SERVER_VERSION },
+          groups,
+          tools_enabled: enabled.sort(),
+          tools_disabled: disabled.sort(),
+          gating: {
+            mode: gating.mode,
+            source: gating.source,
+            enable: [...gating.enable],
+            disable: [...gating.disable],
+          },
+          write_safety: {
+            read_only: safety.readOnly,
+            content_writes: !safety.readOnly,
+            data_writes: !safety.readOnly && safety.allowData,
+            admin_writes: !safety.readOnly && safety.allowAdmin,
+            note: "Content writes are on unless read-only; data/admin writes are opt-in (PORTAL_ALLOW_DATA_WRITES / PORTAL_ALLOW_ADMIN_WRITES).",
+          },
+          audit: auditStatus(),
+          config: activeConfigInfo(),
+        });
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+
   // active_config — which config/portal/repo is currently in effect (redacted).
   server.registerTool(
     "active_config",
@@ -1787,6 +2083,25 @@ function registerResources(server: McpServer): void {
     );
   }
 
+  // Live resource templates — @-mention a real record as context instead of a tool call.
+  // e.g. zportal://block/<uuid>, zportal://layout/<uuid>, zportal://datasource/<uuid>.
+  const liveResource = (name: string, scheme: string, apiPath: (id: string) => string, desc: string) =>
+    server.registerResource(
+      name,
+      new ResourceTemplate(`zportal://${scheme}/{id}`, { list: undefined }),
+      { title: `Portal ${name}`, description: desc, mimeType: "application/json" },
+      async (uri, variables) => {
+        const id = String(variables.id);
+        const data = await request("GET", apiPath(id));
+        return {
+          contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(data, null, 2) }],
+        };
+      }
+    );
+  liveResource("block", "block", (id) => `/api/blocks/${encodeURIComponent(id)}`, "A live block by UUID (HTML/CSS + binding).");
+  liveResource("layout", "layout", (id) => `/api/layouts/${encodeURIComponent(id)}`, "A live page/layout by UUID (grid + placement).");
+  liveResource("datasource", "datasource", (id) => `/api/datasources/${encodeURIComponent(id)}`, "A live datasource by UUID (columns + config).");
+
   // Active authoring conventions (configurable via rules.json / PORTAL_BLOCK_RULES_FILE).
   server.registerResource(
     "conventions",
@@ -1821,6 +2136,39 @@ function registerResources(server: McpServer): void {
 
 // ── Prompts ───────────────────────────────────────────────────────────────────
 function registerPrompts(server: McpServer): void {
+  // zuar_portal_quickstart — orient + route the user to the right tool/prompt/agent.
+  server.registerPrompt(
+    "zuar_portal_quickstart",
+    {
+      title: "Zuar Portal: get oriented",
+      description:
+        "Confirm the connection + posture and route to the right next step (build a block, explore data, theme, audit, configure).",
+      argsSchema: { goal: z.string().optional().describe("What you want to do, if you already know.") },
+    },
+    ({ goal }) => {
+      const goalLine = goal && goal.trim() ? `The user's goal: ${goal}.` : "The user hasn't stated a goal yet.";
+      const text = [
+        "Orient me to this Zuar Portal MCP and help me get started.",
+        "",
+        "1. Call active_config (which portal am I on?) and get_capabilities (which tool groups + write " +
+          "permissions are enabled, is version control / audit on?). get_version confirms connectivity. " +
+          "If the folder isn't configured, run the setup_zuar_project prompt / init_project_config first.",
+        "2. Summarize the posture in one or two lines (portal URL, who I'm signed in as, content/data/admin " +
+          "write status, any disabled tool groups).",
+        `3. ${goalLine} Then recommend the best next step and DO it (or ask one clarifying question):`,
+        "   - Build/restyle a block → use the create_zportal_block prompt, or in Claude Code the /portal-build " +
+          "pipeline (builder → stylist → responsive → debugger → adversary → advisor).",
+        "   - Explore data → list_resource resource=\"datasource\" (use only_names/limit), profile_datasource, " +
+          "fetch_sample_rows, execute_query (with a limit).",
+        "   - Theme the portal → /portal-theme (theme-designer). Bulk changes → /portal-bulk (snapshot first).",
+        "   - Audit existing blocks → /portal-audit. Align to the business/data → /portal-align (onboarding).",
+        "   - Read zportal://guide/* before authoring any block.",
+        "Keep it concise and action-oriented; don't dump the whole capability list unless asked.",
+      ].join("\n");
+      return { messages: [{ role: "user", content: { type: "text", text } }] };
+    }
+  );
+
   server.registerPrompt(
     "create_zportal_block",
     {

@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "zuar-portal-mcp-server",
   "display_name": "Zuar Portal",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "Create and manage Zuar Portal blocks, pages, data sources, queries, users and more with Claude.",
   "long_description": "An MCP server that lets Claude operate a Zuar Portal (zPortal) end to end. Typed, validated tools author HTML blocks; a generic resource layer covers layouts (pages), datasources, queries, db_modifications, partials, themes, users, groups, permissions, access policies, API keys, credentials, snippets, translations, dashboards, tags and system records. Action tools handle sample-row previews, query execution, database modifications, password changes, user group/permission assignment and config. A layered write-safety model keeps low-risk content edits on by default while data (SQL) and admin (users/security) writes stay opt-in.",
   "author": {
@@ -29,7 +29,9 @@
         "PORTAL_VC_REMOTE_URL": "${user_config.portal_vc_remote_url}",
         "PORTAL_VC_TOKEN": "${user_config.portal_vc_token}",
         "PORTAL_VC_USERNAME": "${user_config.portal_vc_username}",
-        "PORTAL_DESIGN_FILE": "${user_config.portal_design_file}"
+        "PORTAL_DESIGN_FILE": "${user_config.portal_design_file}",
+        "PORTAL_DISABLE_TOOLS": "${user_config.portal_disable_tools}",
+        "PORTAL_AUDIT_LOG": "${user_config.portal_audit_log}"
       }
     }
   },
@@ -65,6 +67,7 @@
     { "name": "update_me", "description": "Update the current user's profile (admin writes required)." },
     { "name": "get_config", "description": "Get the portal config document." },
     { "name": "update_config", "description": "Set a config value by path (admin writes required)." },
+    { "name": "get_capabilities", "description": "Report enabled tool groups, write-safety posture, config source, and audit status (always available)." },
     { "name": "active_config", "description": "Report which project config/portal/repo is in effect (secrets redacted)." },
     { "name": "init_project_config", "description": "Set up this folder's .zuar-portal/config.json for a specific portal (+ optional VC), then validate." },
     { "name": "vc_status", "description": "Report portal version-control status (PORTAL_VC_DIR)." },
@@ -84,6 +87,12 @@
       "description": "Guided first-time setup: connect this folder to a portal and write .zuar-portal/config.json.",
       "arguments": [],
       "text": "Help me connect this project folder to a Zuar Portal. Call active_config first, then collect the portal URL, API key and user ID (and optional version-control repo), call init_project_config, and confirm the login — never printing secrets back."
+    },
+    {
+      "name": "zuar_portal_quickstart",
+      "description": "Get oriented: confirm the connection + posture and route to the right next step.",
+      "arguments": ["goal"],
+      "text": "Orient me to this Zuar Portal MCP. Call active_config and get_capabilities (and get_version) to report the portal, sign-in, write posture and any disabled tool groups, then recommend and take the best next step for: ${arguments.goal}. Read zportal://guide/* before authoring a block."
     }
   ],
   "tools_generated": false,
@@ -181,6 +190,18 @@
       "type": "string",
       "title": "Design system file",
       "description": "Path to a custom design.md to override the bundled house visual design system. Leave blank to use the default.",
+      "required": false
+    },
+    "portal_disable_tools": {
+      "type": "string",
+      "title": "Disable tool groups",
+      "description": "Comma-separated GROUPS or tool names to turn OFF entirely (least-privilege). Groups: discovery, blocks, resources, data, users, config, vc, setup. e.g. 'users,config' hides all user/permission and portal-config tools. Leave blank to keep every tool.",
+      "required": false
+    },
+    "portal_audit_log": {
+      "type": "string",
+      "title": "Audit log file",
+      "description": "Path to an append-only JSONL file. When set, every write (content/data/admin) appends one line of operation metadata (op, kind, id, domain) — never payloads or secrets. Leave blank to disable.",
       "required": false
     }
   }
