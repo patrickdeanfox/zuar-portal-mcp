@@ -26,6 +26,7 @@ import { z } from "zod";
 import { request } from "./portalClient.js";
 import { blockReason } from "./config.js";
 import { GUIDES } from "./guidance.js";
+import { getDesign } from "./design.js";
 import { getRules, validateBlock, type ValidationResult } from "./rules.js";
 import {
   DESCRIPTORS,
@@ -1230,6 +1231,22 @@ function registerResources(server: McpServer): void {
       contents: [{ uri: uri.href, mimeType: "text/markdown", text: getRules().conventions }],
     })
   );
+
+  // House visual design system (configurable via assets/design.md / PORTAL_DESIGN_FILE).
+  server.registerResource(
+    "design-system",
+    "zportal://guide/design-system",
+    {
+      title: "House visual design system",
+      description:
+        "The portal's house style — palette, typography, spacing, chart styling, and component " +
+        "patterns. Apply it when authoring or restyling blocks so surfaces stay consistent.",
+      mimeType: "text/markdown",
+    },
+    async (uri) => ({
+      contents: [{ uri: uri.href, mimeType: "text/markdown", text: getDesign() }],
+    })
+  );
 }
 
 // ── Prompts ───────────────────────────────────────────────────────────────────
@@ -1259,10 +1276,11 @@ function registerPrompts(server: McpServer): void {
         "",
         "Follow this order:",
         "1. Read the resources zportal://guide/block-structure, zportal://guide/currentblock, " +
-          "zportal://guide/zportal-api (filters, modals, block APIs), and " +
-          "zportal://guide/conventions (the active always/never rules) — and " +
-          "zportal://guide/charting if the block needs a chart (ECharts for complex, " +
-          "Chart.js/vanilla for simple; amCharts only if the user explicitly asks).",
+          "zportal://guide/zportal-api (filters, modals, block APIs), " +
+          "zportal://guide/conventions (the active always/never rules), and " +
+          "zportal://guide/design-system (the house visual style — palette, typography, spacing, " +
+          "components, chart styling) — and zportal://guide/charting if the block needs a chart " +
+          "(ECharts for complex, Chart.js/vanilla for simple; amCharts only if the user explicitly asks).",
         `2. ${dsLine} Call list_resource with resource=\"datasource\" and resource=\"query\" to ` +
           "find the datasource and the saved query to bind. Verify the query's REAL output " +
           "columns with execute_query (or fetch_sample_rows on the datasource) and match the " +
@@ -1284,8 +1302,10 @@ function registerPrompts(server: McpServer): void {
           "last. For ASYNC blocks (library load, fetch, deferred render) obtain " +
           "currentBlock.getOnLoadedCallback() early and call it once after render (in a finally) " +
           "or the loader can hang; sync blocks don't need it.",
-        "4. Use theme variables (var(--color-primary, fallback), --body-bg-color, etc.) — never " +
-          "hardcode hex/fonts. Don't author loading states (Portal has a skeleton loader). Avoid " +
+        "4. Apply the house design system (zportal://guide/design-system) — palette, type scale, " +
+          "spacing, component + chart styling. Use theme variables (var(--color-primary, fallback), " +
+          "--body-bg-color, etc.) — never hardcode hex/fonts. Don't author loading states (Portal " +
+          "has a skeleton loader). Avoid " +
           "AngularJS $compile footguns: {{ }} is evaluated (escape or set via JS); format currency " +
           "with value.toLocaleString('en-US',{style:'currency',currency:'USD'}) to dodge the $ issue. " +
           "Prefer addEventListener over inline on* handlers; external <script src> is stripped, so " +
