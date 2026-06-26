@@ -28,7 +28,12 @@ own — to change the house style globally. For one-off restyles, use a design s
 - Family: `var(--font-stack-primary, system-ui, -apple-system, sans-serif)`.
 - Scale (size / weight): KPI value **26 / 800** (`letter-spacing:-.01em`), section/hero title
   **22–30 / 800**, card title **14 / 800**, body **13 / 500**, eyebrow **11 / 700** UPPERCASE
-  `letter-spacing:.12–.14em` in the accent color, caption/label **10.5–11 / 600** muted.
+  `letter-spacing:.12–.14em`, caption/label **10.5–11 / 600** muted.
+- **Accent text must still pass contrast.** The accent dot/marker can be `--color-primary`, but small
+  accent-*colored text* (an 11px eyebrow) often falls below the 4.5:1 AA floor (`#119DA4`/`#009fe4` on
+  white ≈ 3.0–3.4:1). So keep the accent on the **dot** and set the eyebrow *text* in `--color-text`
+  (or `--color-gray-700`), or darken the accent for text only via `--color-primary-dark` /
+  `color-mix(in srgb, var(--color-primary) 70%, black)`. Never ship small text below 4.5:1 (see §10).
 - Numbers (KPIs, table figures): `font-variant-numeric: tabular-nums` so columns align.
 - Never pure black — use `var(--color-text)` (~#1f2937).
 
@@ -130,7 +135,10 @@ Minimal, theme-token starting points. Money is always `toLocaleString('en-US',{s
 .wrapper .kpi { background:var(--block-bg-color,#fff); border:1px solid var(--color-gray-200,rgba(0,0,0,.07));
   border-radius:12px; padding:16px; box-shadow:0 1px 3px rgba(16,24,40,.06); }
 .wrapper .kpi .label { font:700 11px/1.2 var(--font-stack-primary,system-ui); letter-spacing:.13em;
-  text-transform:uppercase; color:var(--color-primary,#009fe4); }
+  text-transform:uppercase; color:var(--color-primary-dark, color-mix(in srgb, var(--color-primary,#009fe4) 70%, black)); }
+/* accent lives on a dot, not the small text — keeps the eyebrow AA-contrast-safe (see section 3/10) */
+.wrapper .kpi .label::before { content:""; display:inline-block; width:7px; height:7px; border-radius:50%;
+  margin-right:7px; vertical-align:baseline; background:var(--color-primary,#009fe4); }
 .wrapper .kpi .value { font:800 26px/1.1 var(--font-stack-primary,system-ui); letter-spacing:-.01em;
   font-variant-numeric:tabular-nums; color:var(--color-text,#1f2937); margin-top:6px; }
 .wrapper .kpi .ctx { font:600 11px/1.3 var(--font-stack-primary,system-ui); color:var(--color-gray-500,#6b7280); margin-top:4px; }
