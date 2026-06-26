@@ -1,0 +1,56 @@
+# Zuar Portal MCP — Documentation
+
+The **zuar-portal-mcp** server lets Claude operate a [Zuar Portal](https://www.zuar.com/) (zPortal)
+end to end: author HTML blocks, build pages, manage datasources/queries/themes/users, explore data,
+and (new in 2.2.0) keep a git-versioned, revertible history of every content change — all through
+natural language.
+
+> **Versions:** these docs describe the MCP server at **v2.2.0**, which targets a **Zuar Portal 1.19**
+> instance (the in-block data API is the "v1.18+" shape — both terms refer to the same current
+> contract). Surfaces added in 2.2.0 are flagged **`[2.2.0]`**; they're implemented on the working
+> branch `feat/design-system-and-portal-vc` and become active in your **running** server only after
+> `npm run build` + `.mcpb` repack + MCP restart (until then the live server behaves as v2.1.0).
+
+## Start here
+- **New to the server?** → [01 · Overview](01-overview.md)
+- **Setting it up?** → [02 · Install & Configuration](02-install-and-config.md)
+- **Want the full tool list?** → [03 · Tools Reference](03-tools-reference.md)
+
+## Documentation map
+
+| # | Doc | Read it when you want to… |
+|---|-----|---------------------------|
+| 01 | [Overview](01-overview.md) | Understand what the server is and how it's structured |
+| 02 | [Install & Configuration](02-install-and-config.md) | Install it, set credentials, and tune the write-safety + VC + design env vars |
+| 03 | [Tools Reference](03-tools-reference.md) | Look up any of the 32 tools — params, risk domain, examples |
+| 04 | [Authoring Blocks](04-authoring-blocks.md) | Build HTML blocks: data binding, `queryResults`, the safe build flow |
+| 05 | [Authoring Rules](05-authoring-rules.md) | Know what `create_block`/`update_block` enforce, and configure it |
+| 06 | [Design System](06-design-system.md) | Give every block one house look via `design.md` (+ design skills) |
+| 07 | [Version Control](07-version-control.md) | Track + revert portal changes with git **`[2.2.0]`** |
+| 08 | [zPortal In-Block API](08-zportal-in-block-api.md) | Use `zPortal`/`currentBlock` inside a block (filters, charts, modals) |
+| 09 | [Related Skills](09-related-skills.md) | Pick the right Claude skill for a zPortal task |
+| 10 | [Recipes](10-recipes.md) | Follow end-to-end use cases (dashboards, drill-down, write-back) |
+| 11 | [Loops & Automation](11-loops-and-automation.md) | Use loops/schedules for automation + data exploration |
+| 12 | [Troubleshooting](12-troubleshooting.md) | Fix blank blocks, empty data, wiped bindings, token dumps |
+
+## The one-minute mental model
+- **Blocks** are HTML/JS/CSS surfaces. They **bind to data** through a saved **query** (which wraps a
+  **datasource**) via the block's `ui_queries`. Inside a block, data arrives synchronously on
+  `currentBlock.queryResults[n]`.
+- **Pages** (called **layouts**) place blocks on a responsive grid (`lg`/`md`/`sm`).
+- **Filters** are native and cross-block: `zPortal.dataSource.setFilters(col, [val])` re-queries every
+  bound block on the page.
+- **Write safety** is layered: *content* writes (blocks/pages/queries/themes) are on by default;
+  *data* (SQL) and *admin* (users/security) writes are opt-in env flags.
+- **Authoring rules** validate every block before it's saved; **`design.md`** guides its look;
+  **version control** commits every content change so you can revert.
+
+## Quick links into the source
+- Tools + safety wiring: `src/server.ts`
+- Generic resource registry: `src/resources.ts`
+- Authoring rules + conventions: `src/rules.ts`, `assets/rules.json`, `assets/conventions.md`
+- Design system: `src/design.ts`, `assets/design.md`
+- Version control: `src/portalVc.ts`
+- In-block guidance resources: `src/guidance.ts`
+- HTTP client + auth: `src/portalClient.ts`
+- Credentials + safety config: `src/config.ts`

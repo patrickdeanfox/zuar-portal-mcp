@@ -6,6 +6,8 @@ An [MCP](https://modelcontextprotocol.io) server that lets **Claude operate your
 
 **Block writes are validated.** HTML blocks go through dedicated, validated tools (`create_block`/`update_block`). Every other resource is reached through generic resource tools. **Writes are gated by risk domain** — content edits are on by default; data (SQL) and admin (users/security) writes are opt-in (see [Write safety](#write-safety)).
 
+> **📚 Full documentation:** the complete guide lives in **[`docs/`](docs/README.md)** — overview, install & config, a reference for all 32 tools, block authoring, the 17 authoring rules, the design system, version control, the in-block `zPortal` API, recipes, loops/automation & data exploration, and troubleshooting.
+
 ---
 
 ## Contents

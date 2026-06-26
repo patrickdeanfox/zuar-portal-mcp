@@ -48,7 +48,7 @@ When calling create_block / update_block:
 - For html blocks the HTML+JS content lives in \`json_data.html\`, and \`css\` (a string the
   server normalizes — may be stored as a line array) carries the CSS.
 - A block binds to data via \`ui_queries\` (the portal has no \`data\` field):
-  \`[{ "enabled": true, "page_size": 50, "query_id": "<query-uuid>",
+  \`[{ "enabled": true, "page_size": null, "query_id": "<query-uuid>",
   "filter_strategy": { "type": "blacklist", "value": [] } }]\`. Each query_id -> a saved
   \`query\` resource holding the datasource + SQL; \`queryResults[n]\` maps to \`ui_queries[n]\`.
   A query with no datasource is rejected ("a query must have a datasource"). Empty
