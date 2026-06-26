@@ -86,7 +86,9 @@ Truthy values: `1`, `true`, `yes`, `on`.
 > Requires the **v2.2.0 build to be running** (see [Updating after code changes](#updating-after-code-changes)).
 > On an older running build, setting these vars has no effect.
 1. Pick/clone a git repo for portal state, e.g. `~/zuar-portal-state`.
-2. Set `PORTAL_VC_DIR=~/zuar-portal-state` (the server runs `git init` if it isn't a repo yet).
+2. Point the server at it — **either** env `PORTAL_VC_DIR=~/zuar-portal-state`, **or** (run-from-source)
+   a `vc` section in `config.json`: `{ "vc": { "dir": "~/zuar-portal-state", "push": false, "remote":
+   "origin" } }`. The server runs `git init` if it isn't a repo yet; env vars override `config.json`.
 3. (GitHub) `gh repo create zuar-portal-state --private`, add it as `origin`, set `PORTAL_VC_PUSH=1`.
 4. Restart the MCP, then run **`snapshot_portal`** once to seed the baseline.
 

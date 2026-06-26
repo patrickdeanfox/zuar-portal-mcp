@@ -88,24 +88,55 @@ export function log(...args: unknown[]): void {
 }
 
 // ── Pure helpers ──────────────────────────────────────────────────────────────
-function readConfigFile(): Partial<PortalConfig> {
+let cachedRawFile: Record<string, unknown> | null = null;
+
+// Read the whole config.json once (beside dist/, or one level up at the project root).
+function readRawConfigFile(): Record<string, unknown> {
+  if (cachedRawFile !== null) return cachedRawFile;
+  cachedRawFile = {};
   try {
     const dir = path.dirname(fileURLToPath(import.meta.url));
-    // dist/config.js -> look for config.json one level up (project root) and beside it
-    const candidates = [
-      path.join(dir, CONFIG_FILENAME),
-      path.join(dir, "..", CONFIG_FILENAME),
-    ];
+    const candidates = [path.join(dir, CONFIG_FILENAME), path.join(dir, "..", CONFIG_FILENAME)];
     for (const file of candidates) {
       if (fs.existsSync(file)) {
-        const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
-        return parsed.portal ?? parsed ?? {};
+        cachedRawFile = (JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>) ?? {};
+        break;
       }
     }
   } catch {
-    /* fall through to empty */
+    cachedRawFile = {};
   }
-  return {};
+  return cachedRawFile;
+}
+
+function readConfigFile(): Partial<PortalConfig> {
+  const raw = readRawConfigFile();
+  return (raw.portal as Partial<PortalConfig>) ?? (raw as Partial<PortalConfig>) ?? {};
+}
+
+// ── Version-control configuration ─────────────────────────────────────────────
+export interface VcSettings {
+  dir: string | null; // resolved repo path; null = version control disabled
+  push: boolean;
+  remote: string;
+}
+
+let cachedVc: VcSettings | null = null;
+
+/**
+ * Resolve version-control settings. Env vars win; otherwise a `vc` section in
+ * config.json: { "dir": "/path/to/repo", "push": false, "remote": "origin" }.
+ * `dir` unset/empty = VC disabled (no-op).
+ */
+export function loadVcConfig(): VcSettings {
+  if (cachedVc !== null) return cachedVc;
+  const f = (readRawConfigFile().vc as Record<string, unknown>) ?? {};
+  const rawDir = process.env.PORTAL_VC_DIR ?? (typeof f.dir === "string" ? f.dir : undefined);
+  const dir = rawDir && rawDir.trim() ? path.resolve(rawDir.trim()) : null;
+  const push = envOn("PORTAL_VC_PUSH") || f.push === true;
+  const remote = process.env.PORTAL_VC_REMOTE ?? (typeof f.remote === "string" ? f.remote : "origin");
+  cachedVc = { dir, push, remote };
+  return cachedVc;
 }
 
 /**

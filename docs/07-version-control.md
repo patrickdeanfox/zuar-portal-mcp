@@ -14,6 +14,13 @@ PORTAL_VC_PUSH=1                           # (optional) git push after each comm
 PORTAL_VC_REMOTE=origin                    # (optional) remote name, default origin
 ```
 
+Or, when running from source, configure it in `config.json` (env vars override this; `config.json`
+is gitignored, so secrets stay local):
+```json
+{ "portal": { "url": "…", "apiKey": "…", "userId": "…" },
+  "vc": { "dir": "/abs/path/zuar-portal-state", "push": false, "remote": "origin" } }
+```
+
 GitHub setup (creates the repo, clones it locally, then point `PORTAL_VC_DIR` at the clone):
 ```bash
 gh repo create zuar-portal-state --private --clone   # creates + clones into ./zuar-portal-state

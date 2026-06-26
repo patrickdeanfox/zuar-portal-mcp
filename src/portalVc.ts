@@ -17,18 +17,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { log } from "./config.js";
-
-const TRUTHY = new Set(["1", "true", "yes", "on"]);
-function envOn(name: string): boolean {
-  const v = process.env[name];
-  return v !== undefined && TRUTHY.has(v.trim().toLowerCase());
-}
+import { log, loadVcConfig } from "./config.js";
 
 /** Absolute path of the VC repo, or null when version control is disabled. */
 export function vcDir(): string | null {
-  const d = process.env.PORTAL_VC_DIR;
-  return d && d.trim() ? path.resolve(d.trim()) : null;
+  return loadVcConfig().dir;
 }
 export function isVcEnabled(): boolean {
   return vcDir() !== null;
@@ -40,12 +33,8 @@ export function vcStatus(): {
   push: boolean;
   remote: string;
 } {
-  return {
-    enabled: isVcEnabled(),
-    dir: vcDir(),
-    push: envOn("PORTAL_VC_PUSH"),
-    remote: process.env.PORTAL_VC_REMOTE || "origin",
-  };
+  const c = loadVcConfig();
+  return { enabled: c.dir !== null, dir: c.dir, push: c.push, remote: c.remote };
 }
 
 // ── git helpers ───────────────────────────────────────────────────────────────
@@ -86,9 +75,9 @@ function rel(kind: string, id: string): string {
 }
 
 function maybePush(dir: string): void {
-  if (!envOn("PORTAL_VC_PUSH")) return;
-  const remote = process.env.PORTAL_VC_REMOTE || "origin";
-  try { git(dir, ["push", remote, "HEAD"]); } catch (e) { log("vc: push failed", (e as Error).message); }
+  const c = loadVcConfig();
+  if (!c.push) return;
+  try { git(dir, ["push", c.remote, "HEAD"]); } catch (e) { log("vc: push failed", (e as Error).message); }
 }
 
 function writeFile(dir: string, relPath: string, data: unknown): void {
