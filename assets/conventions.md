@@ -50,10 +50,10 @@ of script (`init();`). It reads the data, calls the build/render helpers in orde
 wires any listeners. Keep helpers above it pure; side effects live in `init()` and the
 IO helpers it calls.
 
-## Data access (v1.18+)
+## Data access (v1.18 / v1.19)
 
 - Read query data from `currentBlock.queryResults[index]` — one entry per query
-  configured on the block. Confirmed v1.18 shape (build 2026-06): `.columns` is a plain
+  configured on the block. Confirmed shape on live v1.18–v1.19 (build 2026-06): `.columns` is a plain
   array of column-name strings (`['region', 'branch', ...]`) and `.data` is an array of
   **positional row arrays** (`[['Northeast', 'Boston Main', 142, ...], ...]`). Values keep
   native types (numbers stay numbers). `.data` may be a Proxy — treat it as a normal array.
