@@ -357,7 +357,13 @@ export function validateBlock(body: Record<string, unknown>): ValidationResult {
       report("require_loaded_callback", "Async work without getOnLoadedCallback() — obtain it early and call it once after render (in a finally), or Portal's loader can hang (loaded_timeout).");
     }
     if (/setInterval\s*\(/.test(html) || /DOMContentLoaded/.test(html)) {
-      report("no_data_polling", "Query data is ready when the script runs — drop setInterval/DOMContentLoaded polling for data (UI timers are fine).");
+      report(
+        "no_data_polling",
+        "currentBlock.queryResults is ready synchronously when the script runs, and the block's " +
+          "markup precedes its <script>, so call init() directly — you don't need DOMContentLoaded " +
+          "for DOM readiness, and never poll (setInterval) waiting for data to appear. (Genuine UI " +
+          "timers — animations, debounced handlers — are fine.)"
+      );
     }
   }
 

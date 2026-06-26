@@ -60,7 +60,7 @@ import {
 
 // ── Top-level config ────────────────────────────────────────────────────────
 const SERVER_NAME = "zuar-portal-mcp-server";
-const SERVER_VERSION = "2.3.0";
+const SERVER_VERSION = "2.4.0";
 const ONLY_BLOCK_TYPE = "html";
 const SAMPLE_ROW_LIMIT_DEFAULT = 5;
 const SAMPLE_ROW_LIMIT_MAX = 50;
@@ -127,6 +127,81 @@ function withWarnings(payload: unknown, warnings: string[]): unknown {
     return { ...(payload as Record<string, unknown>), _warnings: warnings };
   }
   return { result: payload, _warnings: warnings };
+}
+
+// ── Data helpers (query results / profiling) ──────────────────────────────────
+// Truncate the row arrays in a query/execute response to `limit`, regardless of
+// which common shape it uses ({results:[{data}]}, {queryResults:[{data}]}, {data}).
+// Returns the (mutated copy of the) response annotated with truncation info.
+function truncateQueryRows(res: unknown, limit: number): unknown {
+  if (!res || typeof res !== "object") return res;
+  const out = Array.isArray(res) ? [...res] : { ...(res as Record<string, unknown>) };
+  let truncated = false;
+  let total = 0;
+  const cap = (rows: unknown): unknown => {
+    if (!Array.isArray(rows)) return rows;
+    total += rows.length;
+    if (rows.length > limit) {
+      truncated = true;
+      return rows.slice(0, limit);
+    }
+    return rows;
+  };
+  const o = out as Record<string, any>;
+  for (const key of ["results", "queryResults"]) {
+    if (Array.isArray(o[key])) {
+      o[key] = o[key].map((r: any) =>
+        r && typeof r === "object" ? { ...r, data: cap(r.data) } : r
+      );
+    }
+  }
+  if (Array.isArray(o.data)) o.data = cap(o.data);
+  if (truncated) o._truncated = { limit, total_rows_seen: total };
+  return out;
+}
+
+// Profile sampled rows (columns = name strings, rows = positional arrays) into
+// per-column stats: type guess, non-null count, distinct values (capped), and
+// numeric min/max. Drives the profile_datasource tool.
+function profileRows(
+  columns: string[],
+  rows: unknown[][],
+  distinctCap: number
+): Record<string, unknown>[] {
+  return columns.map((name, i) => {
+    const values = rows.map((r) => (Array.isArray(r) ? r[i] : undefined));
+    const nonNull = values.filter((v) => v !== null && v !== undefined && v !== "");
+    const distinct = new Set<unknown>();
+    let allNumeric = nonNull.length > 0;
+    let min = Infinity;
+    let max = -Infinity;
+    for (const v of nonNull) {
+      if (distinct.size < distinctCap) distinct.add(v);
+      const n = typeof v === "number" ? v : Number(v);
+      if (Number.isFinite(n) && typeof v !== "boolean") {
+        if (n < min) min = n;
+        if (n > max) max = n;
+      } else {
+        allNumeric = false;
+      }
+    }
+    const distinctValues = Array.from(distinct);
+    const col: Record<string, unknown> = {
+      column: name,
+      inferred_type: allNumeric ? "numeric" : "categorical",
+      non_null: nonNull.length,
+      null_or_empty: values.length - nonNull.length,
+      distinct_count: distinct.size >= distinctCap ? `>=${distinctCap}` : distinct.size,
+    };
+    if (allNumeric && Number.isFinite(min)) {
+      col.min = min;
+      col.max = max;
+    } else {
+      // Cap the listed sample values so a high-cardinality column stays cheap.
+      col.sample_values = distinctValues.slice(0, Math.min(distinctCap, 25));
+    }
+    return col;
+  });
 }
 
 // ── Page-grid helpers (layout.json_data.grid block placement) ─────────────────
@@ -638,6 +713,107 @@ function registerBlockTools(server: McpServer): void {
       }
     }
   );
+
+  // validate_block — run the authoring rules WITHOUT writing.
+  server.registerTool(
+    "validate_block",
+    {
+      title: "Validate a block (no write)",
+      description:
+        "Run the same authoring rules as create_block/update_block against a block payload WITHOUT " +
+        "writing it. Use it to iterate on HTML/JS/CSS until it's clean — it flags the footguns that " +
+        "only surface in a live browser (literal `$` String.replace mangling, {{ }} interpolation, " +
+        "data polling, unscoped CSS, full <html> docs, unsafe JS). Returns { valid, errors, warnings }.",
+      inputSchema: {
+        name: z.string().optional().describe("Block name (optional for validation)."),
+        data: z.record(z.string(), z.any()).optional().describe("HTML/JS section (the block `data`)."),
+        css: z.union([z.string(), z.array(z.any())]).optional().describe("CSS section."),
+        json_data: z.record(z.string(), z.any()).optional().describe("Widget/extra config."),
+        ui_queries: uiQueriesField,
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async (args) => {
+      try {
+        const body = buildBlockBody(args);
+        if (body.css === undefined) body.css = [];
+        const v = validateBlock(body);
+        return ok({
+          valid: v.errors.length === 0,
+          errors: v.errors,
+          warnings: v.warnings,
+          summary: v.errors.length === 0
+            ? (v.warnings.length ? `Clean (no errors, ${v.warnings.length} warning(s))` : "Clean — 0 errors, 0 warnings")
+            : `${v.errors.length} error(s) must be fixed before create/update_block will accept this.`,
+        });
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+
+  // set_page_blocks — place MANY blocks on a page in ONE atomic read-modify-write.
+  server.registerTool(
+    "set_page_blocks",
+    {
+      title: "Set multiple blocks on a page (atomic)",
+      description:
+        "Place several blocks on a page (layout) grid in a SINGLE read-modify-write, avoiding the " +
+        "lost-update race you get from calling add_block_to_page in parallel. Each entry is " +
+        "{ block_id, position?, height? } with the same placement semantics as add_block_to_page " +
+        "(omit position to stack full-width below existing content, in array order). Pass replace=true " +
+        "to clear the page's existing blocks first (rebuild the page); default false appends/updates.",
+      inputSchema: {
+        layout_id: z.string().min(1).describe("Layout (page) UUID."),
+        blocks: z
+          .array(
+            z.object({
+              block_id: z.string().min(1).describe("Block UUID to place."),
+              position: z
+                .record(z.string(), z.any())
+                .optional()
+                .describe("Optional placement box (one box for all breakpoints, or { lg, md, sm })."),
+              height: z.number().positive().optional().describe("Auto-place height as % (default 50)."),
+            })
+          )
+          .min(1)
+          .describe("Blocks to place, applied in order."),
+        replace: z
+          .boolean()
+          .optional()
+          .describe("Clear the page's existing grid blocks before placing (default false)."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async (args) => {
+      try {
+        const reason = blockReason(BLOCK_DOMAIN);
+        if (reason) return fail(reason);
+        const desc = getDescriptor("layout");
+        if (!desc) return fail("Layout resource not available on this server.");
+        const layout = await request<Record<string, any>>(
+          "GET",
+          `/api/layouts/${encodeURIComponent(args.layout_id)}`
+        );
+        const jd: Record<string, any> = layout.json_data && typeof layout.json_data === "object" ? layout.json_data : {};
+        let grid: Record<string, any> = jd.grid && typeof jd.grid === "object" ? jd.grid : {};
+        if (args.replace) grid = { blocks: [], block_layouts: {} };
+        for (const b of args.blocks) {
+          addBlockToGrid(grid, b.block_id, b.position, b.height ?? 50);
+        }
+        jd.grid = grid;
+        await updateResource(desc, args.layout_id, { json_data: jd });
+        return ok({
+          layout_id: args.layout_id,
+          placed: args.blocks.map((b) => b.block_id),
+          replaced: Boolean(args.replace),
+          blocks: grid.blocks,
+        });
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
 }
 
 // ── Generic resource tools (driven by the registry) ───────────────────────────
@@ -899,6 +1075,68 @@ function registerActionTools(server: McpServer): void {
     }
   );
 
+  // profile_datasource — per-column stats to design filters/charts without eyeballing samples.
+  server.registerTool(
+    "profile_datasource",
+    {
+      title: "Profile a datasource",
+      description:
+        "Sample a datasource and return per-column statistics — inferred type, non-null/empty counts, " +
+        "distinct value count, sample distinct values for categoricals, and min/max for numerics. " +
+        "Exactly what you need to design filters, choose chart dimensions, and pick aggregations, " +
+        "without eyeballing raw sample rows. Profiles over a sample (default 500 rows).",
+      inputSchema: {
+        datasource_id: z.string().min(1).describe("Datasource UUID."),
+        sample_size: z
+          .number()
+          .int()
+          .min(1)
+          .max(5000)
+          .optional()
+          .describe("Rows to sample for the profile (default 500, max 5000)."),
+        distinct_cap: z
+          .number()
+          .int()
+          .min(1)
+          .max(1000)
+          .optional()
+          .describe("Stop counting distinct values past this many per column (default 100)."),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    async (args) => {
+      try {
+        const sampleSize = args.sample_size ?? 500;
+        const distinctCap = args.distinct_cap ?? 100;
+        const body = { queries: [{ columns: ["*"], limit: sampleSize }] };
+        const res = await request<{ results?: any[] }>(
+          "POST",
+          `/api/datasources/${encodeURIComponent(args.datasource_id)}/data`,
+          body
+        );
+        const first = (res?.results?.[0] ?? {}) as Record<string, any>;
+        const columns: string[] = Array.isArray(first.columns)
+          ? first.columns.map((c: unknown) => (typeof c === "string" ? c : String((c as any)?.name ?? c)))
+          : [];
+        const rows: unknown[][] = Array.isArray(first.data) ? first.data : [];
+        const profile = profileRows(columns, rows, distinctCap);
+        return ok({
+          datasource_id: args.datasource_id,
+          sampled_rows: rows.length,
+          complete: rows.length < sampleSize, // sample covered the whole table
+          column_count: columns.length,
+          columns: profile,
+          note:
+            rows.length < sampleSize
+              ? "Sample covered every row — stats are exact."
+              : `Stats computed over the first ${rows.length} rows (the table is larger).`,
+        });
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+
   // execute_query (saved query by id)
   server.registerTool(
     "execute_query",
@@ -906,13 +1144,20 @@ function registerActionTools(server: McpServer): void {
       title: "Execute a saved query",
       description:
         "Run a saved query by id and return its results. Pass `params` as a { name: value } map " +
-        "for parameterized queries. Read-only data retrieval.",
+        "for parameterized queries. Pass `limit` to cap the rows RETURNED (a SELECT * on a big table " +
+        "can otherwise blow the context budget); the response notes when it truncated. Read-only.",
       inputSchema: {
         query_id: z.string().min(1).describe("Saved query UUID."),
         params: z
           .record(z.string(), z.any())
           .optional()
           .describe("Query parameters as a { name: value } map."),
+        limit: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Max rows to return (truncates the response for cheap exploration; omit for all rows)."),
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
@@ -921,9 +1166,13 @@ function registerActionTools(server: McpServer): void {
         const body: Record<string, unknown> = { query_id: args.query_id };
         const params = toSqlParams(args.params);
         if (params) body.params = params;
-        return ok(
-          await request("POST", `/api/queries/${encodeURIComponent(args.query_id)}/execute`, body)
+        const res = await request(
+          "POST",
+          `/api/queries/${encodeURIComponent(args.query_id)}/execute`,
+          body
         );
+        if (args.limit !== undefined) return ok(truncateQueryRows(res, args.limit));
+        return ok(res);
       } catch (e) {
         return fail((e as Error).message);
       }
