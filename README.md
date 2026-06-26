@@ -6,9 +6,11 @@ An [MCP](https://modelcontextprotocol.io) server that lets **Claude operate your
 
 **Block writes are validated.** HTML blocks go through dedicated, validated tools (`create_block`/`update_block`). Every other resource is reached through generic resource tools. **Writes are gated by risk domain** — content edits are on by default; data (SQL) and admin (users/security) writes are opt-in (see [Write safety](#write-safety)).
 
-> **📚 Full documentation:** the complete guide lives in **[`docs/`](docs/README.md)** — overview, install & config, a reference for all 37 tools, block authoring, the authoring rules, the design system, version control, the in-block `zPortal` API, recipes, loops/automation & data exploration, the [Claude Code agent ecosystem](docs/13-agents-and-workflows.md), and troubleshooting.
+> **📚 Full documentation:** the complete guide lives in **[`docs/`](docs/README.md)** — overview, install & config, a reference for all 38 tools, block authoring, the authoring rules, the design system, version control, the in-block `zPortal` API, recipes, loops/automation & data exploration, the [Claude Code agent ecosystem](docs/13-agents-and-workflows.md), [tool gating & guidance](docs/14-tool-gating-and-guidance.md), and troubleshooting.
 
 > **🏢 Multi-portal & multi-repo (v2.4.0):** one install can drive a **different portal + git repo per folder** via a per-project `./.zuar-portal/config.json`. And when you work in this repo from **Claude Code**, you get a whole **team of specialist agents** (build / style / debug / responsive / theme / bulk / data-expert / advisory) plus slash commands and gated workflows. See [Per-project configuration](#per-project-configuration-multiple-portals) and [Driving it from Claude Code](#driving-it-from-claude-code-the-agent-ecosystem).
+
+> **🔒 Enterprise: tool gating, guidance & audit (v2.5.0):** scope the tool surface to least privilege — disable whole capability groups (e.g. user/permission tools) with `PORTAL_DISABLE_TOOLS=users,config`, or stand up a build-only allowlist with `PORTAL_ENABLE_TOOLS=blocks,resources,data`. **Guided usage** comes from the always-on **`get_capabilities`** tool (orient before acting), server `instructions` surfaced at startup, and the **`zuar_portal_quickstart`** prompt (confirm posture → route to the right tool/agent). And an **opt-in audit log** (`PORTAL_AUDIT_LOG`) appends metadata-only JSONL for every content/data/admin write. Full guide: [docs/14 · Tool Gating & Guidance](docs/14-tool-gating-and-guidance.md).
 
 ---
 
@@ -78,6 +80,7 @@ One set of tools operates every other resource. Pass `resource` plus a `body`/`i
 | `get_config` / `update_config` | Read / set portal config by path. | read / admin |
 | `get_version` | Portal version + about (capability check). | read |
 | `get_rules` | Show active block-authoring rules. | read |
+| `get_capabilities` | Report the current posture — enabled/disabled tool groups, write-safety, VC + audit status, active portal (always available). | read |
 | `active_config` | Report which project config / portal / VC repo is in effect (secrets redacted). | read |
 | `init_project_config` | Write this folder's `./.zuar-portal/config.json` for a specific portal (+ optional VC) and validate it. | setup |
 
@@ -87,7 +90,7 @@ One set of tools operates every other resource. Pass `resource` plus a `body`/`i
 - `zportal://guide/currentblock` — reading query data inside a block and reacting to filters
 - `zportal://guide/amcharts-loader` — the amCharts 5 two-block loader pattern
 
-**Prompts** — `create_zportal_block` (a guided "discover data → build → create" workflow) and `setup_zuar_project` (walks you through connecting this folder to a portal) — invoke either from your MCP client.
+**Prompts** — `zuar_portal_quickstart` (get oriented: confirm posture, then route to the right next step), `create_zportal_block` (a guided "discover data → build → create" workflow) and `setup_zuar_project` (walks you through connecting this folder to a portal) — invoke any from your MCP client.
 
 ---
 

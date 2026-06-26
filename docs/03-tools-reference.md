@@ -1,11 +1,25 @@
 # 03 · Tools Reference
 
-All 37 tools, grouped by purpose. Each is tagged with its **risk domain** — see
+All 38 tools, grouped by purpose. Each is tagged with its **risk domain** — see
 [02 · write-safety domains](02-install-and-config.md#write-safety-domains-important).
 
 **Domain legend:** 🟢 read (always available) · 🔵 content (on by default) · 🟠 data
 (`PORTAL_ALLOW_DATA_WRITES=1`) · 🔴 admin (`PORTAL_ALLOW_ADMIN_WRITES=1`). `PORTAL_READONLY=1` blocks
 all non-read tools.
+
+> **Tool gating `[2.5.0]`.** Beyond write-safety, an install can drop whole **groups of tools** (or
+> individual tools) from the surface entirely — see
+> [02 · Tool gating](02-install-and-config.md#tool-gating-capability-scoping). `get_capabilities`
+> reports what's enabled and is always available.
+
+> **`confirm:true` on destructive writes `[2.5.0]`.** `delete_block`, `delete_resource`,
+> `set_user_groups`, `set_user_permissions`, `set_page_blocks` (only when `replace=true`), and
+> `run_db_modification` require an explicit `confirm:true` — a missing/false `confirm` is rejected before
+> any write.
+
+> **Error envelope `[2.5.0]`.** A failed call returns a structured envelope in `structuredContent`:
+> `{ error, http_status, retriable, is_auth }` alongside the human-readable message — so a caller can
+> branch on auth failures vs. retriable transient errors without parsing text.
 
 ---
 
@@ -17,6 +31,7 @@ all non-read tools.
 | `get_config` | 🟢 | The portal config document. No args. |
 | `get_rules` | 🟢 | Active authoring rules: per-rule severities + the conventions text. No args. See [05](05-authoring-rules.md). |
 | `describe_resource` | 🟢 | `resource?` → fields, required-to-create, verbs, risk domain for one resource; omit `resource` to list every resource type. Call before create/update_resource. |
+| `get_capabilities` `[2.5.0]` | 🟢 | Reports enabled tool groups/tools, write-safety posture, config source, and version-control + audit status. **Always available** — survives tool gating. Secrets redacted. No args. |
 
 ---
 
@@ -40,11 +55,11 @@ Operate over the 17 resource types (layouts, queries, themes, datasources, users
 
 | Tool | Dom | Params | Notes |
 |------|-----|--------|-------|
-| `list_resource` | 🟢 | `resource`, `query?` (url params, e.g. `{only_names:true}`) | Discovery — find a UUID before authoring. Large lists may exceed the token limit and dump to a file. |
+| `list_resource` | 🟢 | `resource`, `query?` (url params, e.g. `{only_names:true}`), `limit?` (max 500), `offset?`, `only_names?` `[2.5.0]` | Discovery — find a UUID before authoring. `limit`/`offset` page the results; `only_names` returns a client-side `{id,name}` projection (**reliable regardless of portal support**). **Back-compat:** with no pagination args the raw portal response is returned unchanged. Large lists may exceed the token limit and dump to a file. |
 | `get_resource` | 🟢 | `resource`, `id` | One record by id (or name, for tags). |
 | `create_resource` | 🔵/🟠/🔴 | `resource`, `body` | Domain = the resource's domain. Unknown body fields dropped. |
 | `update_resource` | 🔵/🟠/🔴 | `resource`, `id`, `body` | PUT is full-replace; the server fetches + merges your fields over the current record so untouched fields survive. |
-| `delete_resource` | 🔵/🟠/🔴 | `resource`, `id` | Cannot be undone on the portal (but VC keeps the last committed copy `[2.2.0]`). |
+| `delete_resource` | 🔵/🟠/🔴 | `resource`, `id`, **`confirm`** | Requires `confirm:true` `[2.5.0]`. Cannot be undone on the portal (but VC keeps the last committed copy `[2.2.0]`). |
 
 > Content-domain creates/updates/deletes are auto-committed to version control `[2.2.0]`.
 
@@ -64,11 +79,11 @@ See [04 · Authoring Blocks](04-authoring-blocks.md) for the full model.
 
 | Tool | Dom | Params | Notes |
 |------|-----|--------|-------|
-| `list_blocks` | 🟢 | `block_ids?`, `only_names?` | List blocks (optionally filtered / names-only). |
+| `list_blocks` | 🟢 | `block_ids?`, `only_names?`, `limit?` (max 500), `offset?` `[2.5.0]` | List blocks (optionally filtered / names-only). `limit`/`offset` page the results; `only_names` is a client-side `{id,name}` projection. **Back-compat:** no pagination args → raw portal response unchanged. |
 | `get_block` | 🟢 | `block_id` | Full block incl. `json_data.html`, `css`, `ui_queries`. Large blocks dump to a file. |
 | `create_block` | 🔵 | `name`, `json_data` (`{html:[…], isolated}`), `css?`, `ui_queries?`, `tags?`, `access?` | Type is always `html`. Runs `validateBlock` — **errors hard-reject**, warns are returned. Auto-committed `[2.2.0]`. |
 | `update_block` | 🔵 | `block_id`, plus any of `name/css/json_data/ui_queries/tags/access` | Field-level merge: fields you **omit are preserved**, a field you **pass is replaced wholesale** (not array-merged). So **omit `ui_queries` to keep the binding;** pass `[]` to unbind. Validated + auto-committed `[2.2.0]`. |
-| `delete_block` | 🔵 | `block_id` | Deletes the block object. VC keeps the last copy `[2.2.0]`. |
+| `delete_block` | 🔵 | `block_id`, **`confirm`** | Deletes the block object — requires `confirm:true` `[2.5.0]`. VC keeps the last copy `[2.2.0]`. |
 | `bind_block_query` | 🔵 | `block_id`, + `query_id` **or** `datasource_id` (+ `sql?`), `page_size?` | One-step binding. With `datasource_id` it auto-creates a `SELECT *` query (use `sql` to customize). `page_size` omitted = **null = all rows** (preferred). The query must have a datasource. |
 | `validate_block` `[2.4.0]` | 🟢 | `name?`, `data?`, `css?`, `json_data?`, `ui_queries?` | Runs the **same authoring rules** as create/update_block **without writing**; returns `{ valid, errors, warnings, summary }`. Iterate a block until clean — catches the literal-`$` trap, `{{ }}` interpolation, data polling, and unscoped CSS. |
 
@@ -86,7 +101,7 @@ add_block_to_page { layout_id:"<page>", block_id:"<id>", position:{left:0,top:0,
 |------|-----|--------|-------|
 | `add_block_to_page` | 🔵 | `layout_id`, `block_id`, `position?`, `height?` | Inserts into `grid.blocks` + `block_layouts.{lg,md,sm}`. `position` is one box `{left,top,width,height}` (units %) applied to all breakpoints, or per-breakpoint `{lg,md,sm}`. Omit to stack full-width. Idempotent. |
 | `remove_block_from_page` | 🔵 | `layout_id`, `block_id` | Removes from the grid (block object kept). Idempotent. |
-| `set_page_blocks` `[2.4.0]` | 🔵 | `layout_id`, `blocks: [{ block_id, position?, height? }]`, `replace?` | Places several blocks in **one atomic read-modify-write** — avoids the lost-update race from parallel `add_block_to_page`. `replace=true` rebuilds the page's grid. |
+| `set_page_blocks` `[2.4.0]` | 🔵 | `layout_id`, `blocks: [{ block_id, position?, height? }]`, `replace?`, `confirm?` | Places several blocks in **one atomic read-modify-write** — avoids the lost-update race from parallel `add_block_to_page`. `replace=true` rebuilds the page's grid and **requires `confirm:true`** `[2.5.0]`. |
 
 > All three edit the **layout**, so they're auto-committed as a `layout` change `[2.2.0]`.
 > ⚠️ Don't call `add_block_to_page` in **parallel** for the same page — each is read-modify-write and
@@ -109,9 +124,9 @@ add_block_to_page { layout_id:"<page>", block_id:"<id>", position:{left:0,top:0,
 | Tool | Dom | Params | Notes |
 |------|-----|--------|-------|
 | `get_user_groups` | 🟢 | `user_id` | A user's groups. |
-| `set_user_groups` | 🔴 | `user_id`, `group_ids[]` | Full replace of membership. |
+| `set_user_groups` | 🔴 | `user_id`, `group_ids[]`, **`confirm`** | Full replace of membership — requires `confirm:true` `[2.5.0]`. |
 | `get_user_permissions` | 🟢 | `user_id` | A user's permissions. |
-| `set_user_permissions` | 🔴 | `user_id`, `permission_ids[]` | Full replace. |
+| `set_user_permissions` | 🔴 | `user_id`, `permission_ids[]`, **`confirm`** | Full replace — requires `confirm:true` `[2.5.0]`. |
 | `update_me` | 🔴 | profile fields | Update the current user's profile. |
 | `change_password` | 🔴 | `old_password`, `new_password` | Never logged/echoed. |
 | `update_config` | 🔴 | `path`, `value`, `merge?` | Set a config value by path. |

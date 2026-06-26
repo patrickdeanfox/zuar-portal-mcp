@@ -101,6 +101,58 @@ OFF, admin OFF.**
 A blocked write returns an actionable message naming the exact flag to set — it never silently no-ops.
 Truthy values: `1`, `true`, `yes`, `on`.
 
+## Tool gating (capability scoping) `[2.5.0]`
+Write-safety gates the **execution** of a write. Tool gating goes further: one install can drop whole
+**groups of tools** (or individual tools) from the MCP surface **entirely** — least-privilege scoping, so
+a given deployment only advertises the capabilities you intend it to have. A gated-off tool isn't
+blocked at call time; it never registers. The tool surface is **fixed at server startup** — changing
+gating needs a **restart**. `get_capabilities` is **always available** and reports which groups/tools
+are enabled, the posture, and audit status.
+
+**The 8 groups:**
+
+| Group | Tools |
+|-------|-------|
+| `discovery` | `get_version`, `get_rules`, `describe_resource`, `get_me` |
+| `blocks` | `list_blocks`, `get_block`, `validate_block`, `create_block`, `update_block`, `delete_block`, `bind_block_query`, `add_block_to_page`, `remove_block_from_page`, `set_page_blocks` |
+| `resources` | `list_resource`, `get_resource`, `create_resource`, `update_resource`, `delete_resource` |
+| `data` | `fetch_sample_rows`, `profile_datasource`, `execute_query`, `run_db_modification` |
+| `users` | `get_user_groups`, `set_user_groups`, `get_user_permissions`, `set_user_permissions`, `change_password`, `update_me` |
+| `config` | `get_config`, `update_config` |
+| `vc` | `vc_status`, `snapshot_portal`, `vc_log`, `restore_resource` |
+| `setup` | `active_config`, `init_project_config` |
+
+> `get_capabilities` sits outside the groups and is **always available** — it can't be gated off by group.
+
+**Modes & configuration:**
+- **Denylist (default).** `PORTAL_DISABLE_TOOLS=users,config` turns those groups **off**; everything else
+  stays on. Names may be **group** names or individual **tool** names. This is the motivating example —
+  "turn off the user/permissions tools."
+- **Allowlist.** Setting `PORTAL_ENABLE_TOOLS=blocks,resources,data` (or `PORTAL_TOOLS_MODE=allowlist`)
+  flips the surface to **default-off**: only the listed groups/tools register — plus the always-available
+  `get_capabilities` and `active_config`, so the config stays fixable.
+- **Project config.** `./.zuar-portal/config.json` carries a `tools` section, same precedence as the rest
+  of the file: `{ "disable": ["users","config"], "enable": [...], "mode": "allowlist" }`.
+- **`deny` always wins.** An explicit tool-**name** deny even removes the always-on introspection tools.
+
+**Project wins over env.** A project `tools` allowlist is **authoritative** — env can **not expand** it.
+Env composes only when the project file is **silent** on gating.
+
+**MCPB / Claude Desktop bundle:** the user_config fields **Disable tool groups** / **Allowlist tool
+groups** / **Tool gating mode**.
+
+## Audit log `[2.5.0]`
+**Opt-in.** Set `PORTAL_AUDIT_LOG=/path/to/audit.jsonl` (or a project-config `audit` — a string path, or
+`{ "log": "/path/to/audit.jsonl" }`). The server then keeps an **append-only JSONL** trail: one line per
+**write** across **content / data / admin**, **metadata only** — `{ ts, domain, op, kind, id }` —
+**never payloads or secrets**. Content writes are captured at the version-control chokepoint; data and
+admin writes at their handlers.
+
+Pseudo / non-regular paths (`/dev`, `/proc`, `/sys`, device files) are **refused** — writing into them
+could corrupt the stdio JSON-RPC stream. The audit log **complements** the git VC mirror (which adds
+rollback for content): it's the flat who-did-what record across all three domains. **MCPB field:**
+**Audit log file**.
+
 ## Full environment variable reference
 | Env var | `.mcpb` field | Default | Purpose |
 |---------|---------------|---------|---------|
@@ -110,6 +162,10 @@ Truthy values: `1`, `true`, `yes`, `on`.
 | `PORTAL_READONLY` | `portal_readonly` | `false` | Block all writes |
 | `PORTAL_ALLOW_DATA_WRITES` | `portal_allow_data_writes` | `false` | Enable data-domain writes |
 | `PORTAL_ALLOW_ADMIN_WRITES` | `portal_allow_admin_writes` | `false` | Enable admin-domain writes |
+| `PORTAL_DISABLE_TOOLS` `[2.5.0]` | `portal_disable_tools` | (none) | Denylist of tool **groups**/names to drop from the surface (e.g. `users,config`) |
+| `PORTAL_ENABLE_TOOLS` `[2.5.0]` | `portal_enable_tools` | (none) | Allowlist of groups/names — sets **default-off**; only these register |
+| `PORTAL_TOOLS_MODE` `[2.5.0]` | `portal_tools_mode` | `denylist` | `allowlist` flips to default-off without naming an enable set |
+| `PORTAL_AUDIT_LOG` `[2.5.0]` | `portal_audit_log` | (unset = off) | Append-only JSONL audit-trail path (one line per write, metadata only) |
 | `PORTAL_VC_DIR` `[2.2.0]` | `portal_vc_dir` | (unset = VC off) | Git repo path; enables auto-commit version control |
 | `PORTAL_VC_PUSH` `[2.2.0]` | `portal_vc_push` | `false` | `git push` after each commit |
 | `PORTAL_VC_REMOTE` `[2.2.0]` | `portal_vc_remote` | `origin` | Remote to push to |
