@@ -31,6 +31,8 @@
         "PORTAL_VC_USERNAME": "${user_config.portal_vc_username}",
         "PORTAL_DESIGN_FILE": "${user_config.portal_design_file}",
         "PORTAL_DISABLE_TOOLS": "${user_config.portal_disable_tools}",
+        "PORTAL_ENABLE_TOOLS": "${user_config.portal_enable_tools}",
+        "PORTAL_TOOLS_MODE": "${user_config.portal_tools_mode}",
         "PORTAL_AUDIT_LOG": "${user_config.portal_audit_log}"
       }
     }
@@ -196,6 +198,18 @@
       "type": "string",
       "title": "Disable tool groups",
       "description": "Comma-separated GROUPS or tool names to turn OFF entirely (least-privilege). Groups: discovery, blocks, resources, data, users, config, vc, setup. e.g. 'users,config' hides all user/permission and portal-config tools. Leave blank to keep every tool.",
+      "required": false
+    },
+    "portal_enable_tools": {
+      "type": "string",
+      "title": "Allowlist tool groups",
+      "description": "Comma-separated GROUPS or tool names to allow — setting this flips to ALLOWLIST mode (everything OFF except what you list, plus the always-available get_capabilities/active_config). e.g. 'blocks,resources,data' for a build-only surface with no user/admin tools. Leave blank to keep denylist mode.",
+      "required": false
+    },
+    "portal_tools_mode": {
+      "type": "string",
+      "title": "Tool gating mode",
+      "description": "Explicit gating mode: 'allowlist' (default-off, only the allowed groups) or 'denylist' (default-on, minus disabled). Usually inferred — set only to be explicit. Leave blank to auto-detect.",
       "required": false
     },
     "portal_audit_log": {

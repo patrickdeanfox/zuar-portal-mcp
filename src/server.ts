@@ -464,7 +464,19 @@ function groupOf(name: string): string {
   return TOOL_GROUPS[name] ?? "meta";
 }
 function toolIsEnabled(name: string): boolean {
+  // An EXPLICIT tool-name deny wins even over the always-available introspection tools,
+  // so an operator who really wants them gone can disable them by name. A group-level
+  // disable still leaves get_capabilities/active_config so the config stays fixable.
+  if (loadToolGating().disable.has(name.toLowerCase())) return false;
   return ALWAYS_ON.has(name) || toolEnabled(name, groupOf(name));
+}
+
+// The tool surface as frozen at buildServer() time. Tool registration happens once at
+// startup; get_capabilities reports THIS so it can never claim a tool is available that
+// wasn't registered (the config can change after startup, e.g. via init_project_config).
+let registeredSnapshot: Map<string, boolean> | null = null;
+function isRegistered(name: string): boolean {
+  return registeredSnapshot ? registeredSnapshot.get(name) ?? false : toolIsEnabled(name);
 }
 
 // Wrap the McpServer so registerTool() silently skips disabled tools, WITHOUT
@@ -495,6 +507,8 @@ export function buildServer(): McpServer {
     { name: SERVER_NAME, version: SERVER_VERSION },
     { instructions: SERVER_INSTRUCTIONS }
   );
+  // Freeze the registered-tool surface now; get_capabilities reports this snapshot.
+  registeredSnapshot = new Map(Object.keys(TOOL_GROUPS).map((n) => [n, toolIsEnabled(n)]));
   // Registration goes through the gate (skips disabled tools); connect()/notifications
   // use the real instance.
   const server = gateServer(real);
@@ -1450,7 +1464,7 @@ function registerActionTools(server: McpServer): void {
         if (args.autocommit !== undefined) body.autocommit = args.autocommit;
         if (args.ignore_sql_errors !== undefined) body.ignore_sql_errors = args.ignore_sql_errors;
         const out = await request("POST", "/api/db_modifications/run", body);
-        audit("data", "run_db_modification", args.name);
+        audit("data", "run_db_modification", "db_modification", args.name);
         return ok(out);
       } catch (e) {
         return fail((e as Error).message);
@@ -1485,7 +1499,7 @@ function registerActionTools(server: McpServer): void {
           old_password: args.old_password,
           new_password: args.new_password,
         });
-        audit("admin", "change_password", "self");
+        audit("admin", "change_password", "user", "self");
         return ok({ status: "password changed" });
       } catch (e) {
         return fail((e as Error).message);
@@ -1541,7 +1555,7 @@ function registerActionTools(server: McpServer): void {
         const out = await request("PUT", `/auth/users/${encodeURIComponent(args.user_id)}/groups`, {
           groups: args.group_ids,
         });
-        audit("admin", "set_user_groups", args.user_id);
+        audit("admin", "set_user_groups", "user", args.user_id);
         return ok(out);
       } catch (e) {
         return fail((e as Error).message);
@@ -1601,7 +1615,7 @@ function registerActionTools(server: McpServer): void {
         const out = await request("PUT", `/auth/users/${encodeURIComponent(args.user_id)}/permissions`, {
           permissions: args.permission_ids,
         });
-        audit("admin", "set_user_permissions", args.user_id);
+        audit("admin", "set_user_permissions", "user", args.user_id);
         return ok(out);
       } catch (e) {
         return fail((e as Error).message);
@@ -1655,7 +1669,7 @@ function registerActionTools(server: McpServer): void {
         if (args.email !== undefined) body.email = args.email;
         if (Object.keys(body).length === 0) return fail("Provide fullname and/or email to update.");
         const out = await request("PATCH", "/auth/me", body);
-        audit("admin", "update_me", "self");
+        audit("admin", "update_me", "user", "self");
         return ok(out);
       } catch (e) {
         return fail((e as Error).message);
@@ -1709,7 +1723,7 @@ function registerActionTools(server: McpServer): void {
         const body: Record<string, unknown> = { path: args.path, value: args.value };
         if (args.merge !== undefined) body.merge = args.merge;
         const out = await request("PUT", "/api/config", body);
-        audit("admin", "update_config", args.path.join("."));
+        audit("admin", "update_config", "config", args.path.join("."));
         return ok(out);
       } catch (e) {
         return fail((e as Error).message);
@@ -1740,7 +1754,8 @@ function registerConfigTools(server: McpServer): void {
         const disabled: string[] = [];
         for (const [name, group] of Object.entries(TOOL_GROUPS)) {
           const bucket = (groups[group] ??= { enabled: [], disabled: [] });
-          if (toolIsEnabled(name)) {
+          // Report the surface FROZEN at startup, not a live re-read (which could drift).
+          if (isRegistered(name)) {
             bucket.enabled.push(name);
             enabled.push(name);
           } else {
@@ -2085,22 +2100,32 @@ function registerResources(server: McpServer): void {
 
   // Live resource templates — @-mention a real record as context instead of a tool call.
   // e.g. zportal://block/<uuid>, zportal://layout/<uuid>, zportal://datasource/<uuid>.
-  const liveResource = (name: string, scheme: string, apiPath: (id: string) => string, desc: string) =>
+  const liveResource = (name: string, scheme: string, apiPath: (id: string) => string, desc: string, gate: string) => {
+    // registerResource bypasses the registerTool gate — so check the gate tool's group here.
+    // Otherwise disabling the blocks group would remove get_block but still expose block content
+    // via @zportal://block/<id>, and get_capabilities would misreport the read surface.
+    if (!isRegistered(gate)) return;
     server.registerResource(
       name,
       new ResourceTemplate(`zportal://${scheme}/{id}`, { list: undefined }),
       { title: `Portal ${name}`, description: desc, mimeType: "application/json" },
       async (uri, variables) => {
-        const id = String(variables.id);
-        const data = await request("GET", apiPath(id));
-        return {
-          contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(data, null, 2) }],
-        };
+        try {
+          const id = String(variables.id);
+          const data = await request("GET", apiPath(id));
+          return {
+            contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(data, null, 2) }],
+          };
+        } catch (e) {
+          // Match the tool error surface instead of rejecting raw.
+          throw new Error((e as Error).message);
+        }
       }
     );
-  liveResource("block", "block", (id) => `/api/blocks/${encodeURIComponent(id)}`, "A live block by UUID (HTML/CSS + binding).");
-  liveResource("layout", "layout", (id) => `/api/layouts/${encodeURIComponent(id)}`, "A live page/layout by UUID (grid + placement).");
-  liveResource("datasource", "datasource", (id) => `/api/datasources/${encodeURIComponent(id)}`, "A live datasource by UUID (columns + config).");
+  };
+  liveResource("block", "block", (id) => `/api/blocks/${encodeURIComponent(id)}`, "A live block by UUID (HTML/CSS + binding).", "get_block");
+  liveResource("layout", "layout", (id) => `/api/layouts/${encodeURIComponent(id)}`, "A live page/layout by UUID (grid + placement).", "get_resource");
+  liveResource("datasource", "datasource", (id) => `/api/datasources/${encodeURIComponent(id)}`, "A live datasource by UUID (columns + config).", "fetch_sample_rows");
 
   // Active authoring conventions (configurable via rules.json / PORTAL_BLOCK_RULES_FILE).
   server.registerResource(

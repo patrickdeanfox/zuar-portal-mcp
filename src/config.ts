@@ -244,14 +244,19 @@ export function loadToolGating(): ToolGating {
   if (cachedGating !== null) return cachedGating;
   const proj = section(discoverProjectConfig().raw, "tools");
   const bundle = section(discoverBundleConfig().raw, "tools");
-  const enable = new Set<string>([
-    ...splitNames(proj.enable ?? bundle.enable),
-    ...splitNames(process.env.PORTAL_ENABLE_TOOLS),
-  ]);
-  const disable = new Set<string>([
-    ...splitNames(proj.disable ?? bundle.disable),
-    ...splitNames(process.env.PORTAL_DISABLE_TOOLS),
-  ]);
+  // Project wins: a project `tools.enable`/`tools.disable` is authoritative and is NOT
+  // unioned with env — otherwise env could re-grant a surface the project locked off
+  // (env must never EXPAND a project allowlist). Env composes only when the project is silent.
+  const enable = new Set<string>(
+    proj.enable !== undefined
+      ? splitNames(proj.enable)
+      : [...splitNames(bundle.enable), ...splitNames(process.env.PORTAL_ENABLE_TOOLS)]
+  );
+  const disable = new Set<string>(
+    proj.disable !== undefined
+      ? splitNames(proj.disable)
+      : [...splitNames(bundle.disable), ...splitNames(process.env.PORTAL_DISABLE_TOOLS)]
+  );
   const explicitMode = (
     (typeof proj.mode === "string" ? proj.mode : process.env.PORTAL_TOOLS_MODE) ?? ""
   )
@@ -311,6 +316,25 @@ export function loadAuditPath(): string | null {
     envStr("PORTAL_AUDIT_LOG") ??
     fromCfg(discoverBundleConfig().raw);
   cachedAudit = p ? path.resolve(p) : null;
+  // Refuse pseudo / non-regular targets (e.g. /dev/stdout, /proc/self/fd/1): appending JSONL
+  // there would corrupt the MCP stdio JSON-RPC framing. A not-yet-existent regular path is fine
+  // (appendFileSync creates it).
+  if (cachedAudit) {
+    const lower = cachedAudit.toLowerCase();
+    let bad = lower.startsWith("/dev/") || lower.startsWith("/proc/") || lower.startsWith("/sys/");
+    if (!bad) {
+      try {
+        const st = fs.statSync(cachedAudit, { throwIfNoEntry: false });
+        if (st && !st.isFile()) bad = true; // existing dir/device/fifo/socket
+      } catch {
+        bad = true; // can't stat a path that exists-ish → don't risk the transport
+      }
+    }
+    if (bad) {
+      log("audit: refusing non-regular/pseudo path for audit log", cachedAudit);
+      cachedAudit = null;
+    }
+  }
   return cachedAudit;
 }
 
@@ -327,7 +351,8 @@ export function appendAudit(entry: Record<string, unknown>): void {
 
 export function auditStatus(): { enabled: boolean; path: string | null } {
   const p = loadAuditPath();
-  return { enabled: p !== null, path: p };
+  // Report only the basename — the full absolute path is harvestable infra detail.
+  return { enabled: p !== null, path: p ? path.basename(p) : null };
 }
 
 // ── Version-control configuration ─────────────────────────────────────────────
