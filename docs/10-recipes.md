@@ -87,3 +87,9 @@ snapshot_portal { message:"before redesign" }
 Build one block well, confirm it renders, then replicate with per-target parameters (datasource id,
 column names, labels, accent). Place each with `add_block_to_page` (sequentially) or assemble each
 page's grid via `update_resource`. For many pages, drive it with a [loop](11-loops-and-automation.md).
+
+## 10. Convert a Tableau dashboard → Zuar page
+Goal: port a Tableau dashboard into a Zuar page + blocks. Use the **`tableau-to-zuar`** skill (in this
+repo's `.claude/skills/`): it unpacks the `.twb`/`.twbx`, scopes to one dashboard, maps each worksheet
+to an existing Zuar datasource/query, and emits one block per worksheet + a filter bar + the grid via
+the same tools used above (snapshot-guarded). See [09 · Related Skills](09-related-skills.md).

@@ -23,6 +23,7 @@ great block; the MCP *creates and binds* it. The server also bundles a subset of
 | **`zportal-migration`** | Moving blocks/pages between portal versions or environments. |
 | **`zportal-readable-handoff`** | Producing a clean, readable handoff of block code for humans. |
 | **`zuar-portal-ready`** | Getting content production-ready for a Zuar Portal. |
+| **`tableau-to-zuar`** | Converting a Tableau dashboard (`.twb`/`.twbx`) into a Zuar Portal page + blocks — maps each worksheet→block, dashboard filters→a native filter bar, and zones→the layout grid; v1 binds to **existing** Zuar datasources. Project-local (lives in this repo's `.claude/skills/`); the XML parser is finalized against a real sample workbook. |
 
 ## Look & feel
 | Skill | Use it when… |
