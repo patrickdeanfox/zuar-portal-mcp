@@ -70,9 +70,10 @@ IO helpers it calls.
   External-APIs sections.
 - Column names are lowercase_with_underscores and must exactly match the query
   aliases. **Column-name mismatch is the most common cause of an empty block.**
-- Block JS runs once per query load. With multiple queries, check all required indices
-  have loaded (`q && q.data !== undefined`) and `return` early if not — without calling
-  the loaded callback.
+- Block JS runs once per query load. A block can bind **many** queries (the v1.18 corpus
+  has blocks with 12–13), each at its own `queryResults[index]` matching `ui_queries[index]`
+  order. With multiple queries, check all required indices have loaded
+  (`q && q.data !== undefined`) and `return` early if not — without calling the loaded callback.
 - Data is present synchronously when the script runs — **don't poll for initial data**
   (`setInterval`, `DOMContentLoaded`). To react to filter changes, subscribe with
   `zPortal.dataSource.on('load', dsId, handler)` (store the handler in a variable so you
@@ -114,11 +115,20 @@ the variable **names** below are the portal's documented set — light/dark show
 | Header background | `--header-bg-color` | `#fff` | `#2D313E` |
 | Sidebar background | `--sidebar-bg-color` | `#e6edf2` | `#2D313E` |
 
+More portal-provided tokens, confirmed in the live v1.18 corpus (use with a fallback —
+exact values are theme-dependent): colors `--color-secondary`, `--color-info`,
+`--color-primary-dark`, `--color-darkgray`, `--color-lightgray`, `--color-white`,
+`--color-link-visited`, and a neutral scale `--color-gray-50 … --color-gray-900`;
+backgrounds `--block-bg-color` (the block's own surface), `--footer-bg-color`; typography
+`--font-stack-primary`, `--font-stack-heading`, `--font-family`, plus size/weight scales
+`--font-size-xs|sm|base|lg|xl|2xl` and `--font-weight-normal|medium|semibold|bold`.
+
 Layout dims also exist: `--header-height` (70px), `--footer-height` (68px),
 `--sidebar-left-width` (250px). Use `var(--token, fallback)`. If you need a color the
 theme doesn't expose, derive it with `color-mix()` from an existing token rather than a
 fixed hex. Blocks may also define their own local design tokens in a `:root {}` /
-wrapper-scoped block at the top of the CSS and consume them via `var(--…)`.
+wrapper-scoped block at the top of the CSS and consume them via `var(--…)` — the corpus is
+full of block-scoped families like `--zuar-*`, `--rpt-*`, `--zlc-*`.
 
 ## Scope CSS to the block (avoid cross-block collisions)
 
@@ -161,15 +171,23 @@ evaluated, not rendered literally.
   `content-1-<UUID>`); read another block's rows with `zPortal.block.getData(iid)`
   (returns row arrays — index access).
 
-## External libraries
+## External libraries & charting
 
-- amCharts 5 (`am5.*`): use the global `AMCHARTS_LOADER` two-block pattern; wrap all
-  chart code in `AMCHARTS_LOADER.load().then(...)`. Call `am5.addLicense(...)` if licensed.
-- Other libs: load with `zPortal.resources.load(url)` — returns a promise; the portal
-  dedupes and tracks it — e.g.
-  `Promise.all(urls.map(u => zPortal.resources.load(u))).then(...)`. Or
-  `document.createElement('script')` with pinned CDN versions. Never a static `<script
-  src>`. Globals already available: `$`/`jQuery`, `moment`.
+- **Charting library by complexity (don't default to amCharts):** **ECharts 5** for complex /
+  interactive charts (drill-down, dataZoom, many series, mixed types, large data); **Chart.js or
+  vanilla JS** (SVG/canvas) for simple charts (a single bar/line/pie, sparkline, gauge); **amCharts 5
+  only when the user explicitly asks for it.**
+- **Load every library with `zPortal.resources.load(url)`** — returns a promise; the portal dedupes
+  and tracks it. Never a static `<script src>` (it's stripped). ECharts/Chart.js are single files —
+  one `load(url).then(...)`. `createElement('script')` also works but prefer `resources.load`.
+- **amCharts (only on request) — do NOT use the `AMCHARTS_LOADER` two-block pattern.** amCharts 5 has
+  a load-order dependency: the core `index.js` must finish before the modules (`xy.js`, `percent.js`,
+  `themes/Animated.js`) — they extend `am5`. Load in **2 dependency-ordered steps** with
+  `zPortal.resources.load`: `load(BASE+'index.js').then(() => Promise.all([load(BASE+'xy.js'),
+  load(BASE+'themes/Animated.js')])).then(buildChart)`. Call `am5.addLicense(...)` if licensed.
+- Dispose on reload (script re-runs): ECharts `echarts.getInstanceByDom(el)?.dispose()`; Chart.js
+  keep the instance and `.destroy()`; amCharts stash the root and `.dispose()`. See
+  `zportal://guide/charting`. Globals already available: `$`/`jQuery`, `moment`.
 
 ## Re-render cleanup
 
@@ -198,14 +216,50 @@ Drive filters through the datasource API (filters apply across active queries):
 - Inspect with `zPortal.dataSource.get()`. Inactive datasources (`isActive: false`)
   ignore refreshes.
 
-## Block data binding
+## Block data binding (ui_queries → a saved query → a datasource)
 
-A block binds to its data through the `data` field saved on the block (not the runtime
-`currentBlock.data`): a query spec `{ "__source__": "<datasource-uuid>", "columns":
-[...SQL exprs with aliases...], "group_by", "limit", "distinct", "enabled" }`. An empty
-`__source__`/`enabled: false` means the block has no bound query (presentational or
-library-loader block). Discover the datasource UUID and column aliases with
-`list_resource`/`fetch_sample_rows` before authoring against them.
+A block does **not** carry its query inline. The block's writable binding field is
+`ui_queries` — the portal `BlockRequest` schema has **no `data`/`__source__` field**
+(any `data` you pass is ignored by this portal version):
+
+```json
+"ui_queries": [
+  { "enabled": true, "page_size": 50, "query_id": "<query-uuid>",
+    "filter_strategy": { "type": "blacklist", "value": [] } }
+]
+```
+
+Each entry's `query_id` points to a saved **`query` resource**, which is what holds the
+datasource(s) and the SQL (`raw_sql` or `sql_form`). A working data block is a chain:
+**block.ui_queries[n].query_id → query → datasource**, and `currentBlock.queryResults[n]`
+corresponds to `ui_queries[n]`. An empty `ui_queries` (`[]`) is a presentational /
+library-loader block with no data.
+
+- **A query must have a datasource.** Binding a `query_id` whose query has no datasource
+  attached fails with *"a query must have a datasource"*. Point the query at a datasource
+  first — `get_resource resource="query" id="<uuid>"` shows its `datasources` and the
+  real output `columns`.
+- **Preserve the binding on every edit.** `ui_queries` is a first-class field; an
+  `update_block` that omits it replaces the block without its binding and the block goes
+  blank. Re-send the existing `ui_queries` whenever you edit an already-bound block.
+- **Verify the real columns before you bind, then match them exactly.** Inspect the bound
+  query with `execute_query`, or the datasource with `fetch_sample_rows`, and set the
+  block's column-name constants to those exact aliases. Column-name mismatch is the #1
+  cause of an empty block — and if the block has hardcoded sample/fallback rows, a
+  mismatch silently renders the **sample data instead**, so it *looks* like it works while
+  showing nothing live. After binding, confirm live rows actually flow (not the fallback).
+- **Aggregate in the query, not the block.** A raw event/log datasource (one row per
+  event) won't expose the shaped columns a chart expects (e.g. `page_url`, `page_views`).
+  Put the `GROUP BY … COUNT(*)`/`SUM(…)` in the query's SQL so it returns chart-ready
+  columns; don't rely on the block JS to aggregate raw rows.
+- **`page_size` default = `null` (all rows). Prefer it.** `ui_queries[n].page_size` caps how
+  many rows reach `queryResults[n]`; `null` (or `0`) means **no limit — return everything**.
+  Default to `null` so the block sees the full dataset; only set a number when capping
+  genuinely makes sense (a deliberately small "top N" preview, or a known-huge table you page
+  through). The portal-UI default of `50` silently truncates a block that filters/aggregates
+  client-side — a silent-data trap like column mismatch. In the real v1.18 corpus, bound
+  queries split between `page_size: null` and large caps (100000+) for exactly this reason.
+  (`filter_strategy.type` is `blacklist` by default; `whitelist` also exists.)
 
 ## Code style — write for humans
 
@@ -220,6 +274,10 @@ library-loader block). Discover the datasource UUID and column aliases with
 
 - **Correctness:** keys read off `currentBlock.queryResults[n]` match the query column
   aliases; empty/null-row paths handled; `init()` runs exactly once.
+- **Binding:** the block has a `ui_queries` entry whose `query_id` resolves to a query
+  with a datasource; column constants match that query's real columns (verified via
+  `execute_query`/`fetch_sample_rows`); live rows render, not the fallback; and any
+  `update_block` re-sends the existing `ui_queries` so the binding survives.
 - **Zuar-fit:** no `<html>/<head>/<body>/<style>` in the fields; no direct amCharts
   `<script>` injection; CSS scoped to the block root; async paths call the
   `getOnLoadedCallback` resolver.

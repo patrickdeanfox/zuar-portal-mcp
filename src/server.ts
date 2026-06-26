@@ -4,7 +4,9 @@
  * Builds the Zuar Portal MCP server.
  *
  * Tool surface (production layout):
- *   - Typed block tools (validated authoring): list/get/create/update/delete_block.
+ *   - Typed block tools (validated authoring): list/get/create/update/delete_block,
+ *     plus bind_block_query (datasource/query binding) and add/remove_block_from_page
+ *     (page-grid placement).
  *   - Generic resource tools over a declarative registry (resources.ts):
  *     list/get/create/update/delete_resource + describe_resource. These cover
  *     layouts, datasources, queries, db_modifications, partials, themes, users,
@@ -39,7 +41,7 @@ import {
 
 // ── Top-level config ────────────────────────────────────────────────────────
 const SERVER_NAME = "zuar-portal-mcp-server";
-const SERVER_VERSION = "2.0.0";
+const SERVER_VERSION = "2.1.0";
 const ONLY_BLOCK_TYPE = "html";
 const SAMPLE_ROW_LIMIT_DEFAULT = 5;
 const SAMPLE_ROW_LIMIT_MAX = 50;
@@ -77,9 +79,13 @@ function toSqlParams(
 
 // Build an /api/blocks body from validated args, forcing html type.
 // The portal requires `css` to be a list; a raw string is wrapped into one.
+// `ui_queries` is the block's real query/datasource binding (the portal BlockRequest
+// schema has no `data` field) and MUST be carried through: update_block does a
+// full-replace PUT of buildBlockBody(existing) merged with the edits, so dropping
+// ui_queries here would silently wipe the bound datasource on every edit.
 function buildBlockBody(args: Record<string, unknown>): Record<string, unknown> {
   const body: Record<string, unknown> = { type: ONLY_BLOCK_TYPE };
-  for (const key of ["name", "data", "css", "json_data", "tags", "access"] as const) {
+  for (const key of ["name", "data", "css", "json_data", "ui_queries", "tags", "access"] as const) {
     if (args[key] !== undefined) body[key] = args[key];
   }
   if (typeof body.css === "string") body.css = [body.css];
@@ -104,11 +110,108 @@ function withWarnings(payload: unknown, warnings: string[]): unknown {
   return { result: payload, _warnings: warnings };
 }
 
+// ── Page-grid helpers (layout.json_data.grid block placement) ─────────────────
+// A layout (page) places blocks via grid.blocks (the id list) plus
+// grid.block_layouts.{lg,md,sm}[blockId] = { left, top, width, height, sizingUnit, zIndex }.
+// These pure helpers keep that bookkeeping in one place for the placement tools.
+const GRID_BREAKPOINTS = ["lg", "md", "sm"] as const;
+
+// Largest (top + height) among a breakpoint's existing blocks — so a new block can
+// stack below current content instead of overlapping it.
+function gridStackTop(blockLayouts: Record<string, any>): number {
+  let maxBottom = 0;
+  for (const key of Object.keys(blockLayouts || {})) {
+    const p = (blockLayouts[key] || {}) as Record<string, unknown>;
+    const bottom = (Number(p.top) || 0) + (Number(p.height) || 0);
+    if (bottom > maxBottom) maxBottom = bottom;
+  }
+  return maxBottom;
+}
+
+// Resolve a placement box for one breakpoint: caller's per-breakpoint box, a single
+// box applied to all breakpoints, else a full-width slot stacked below existing blocks.
+function resolvePlacement(
+  grid: Record<string, any>,
+  bp: string,
+  position: Record<string, any> | undefined,
+  height: number
+): Record<string, number | string> {
+  const fullWidth = bp === "md" ? 102 : 100;
+  let box: Record<string, any> | undefined;
+  if (position && position[bp] && typeof position[bp] === "object") box = position[bp];
+  else if (position && typeof position.left === "number") box = position;
+  if (!box) {
+    const existing = grid.block_layouts ? grid.block_layouts[bp] : {};
+    box = { left: 0, top: gridStackTop(existing), width: fullWidth, height };
+  }
+  return {
+    left: Number(box.left) || 0,
+    top: Number(box.top) || 0,
+    width: Number(box.width) || fullWidth,
+    height: Number(box.height) || height,
+    sizingUnit: typeof box.sizingUnit === "string" ? box.sizingUnit : "%",
+    zIndex: Number(box.zIndex) || 0,
+  };
+}
+
+// Insert/replace a block in the grid (blocks[] + block_layouts.{lg,md,sm}).
+function addBlockToGrid(
+  grid: Record<string, any>,
+  blockId: string,
+  position: Record<string, any> | undefined,
+  height: number
+): void {
+  if (!Array.isArray(grid.blocks)) grid.blocks = [];
+  if (grid.blocks.indexOf(blockId) === -1) grid.blocks.push(blockId);
+  if (!grid.block_layouts || typeof grid.block_layouts !== "object") grid.block_layouts = {};
+  for (const bp of GRID_BREAKPOINTS) {
+    if (!grid.block_layouts[bp] || typeof grid.block_layouts[bp] !== "object") grid.block_layouts[bp] = {};
+    grid.block_layouts[bp][blockId] = resolvePlacement(grid, bp, position, height);
+  }
+}
+
+// Remove a block from the grid everywhere it is referenced. Returns whether it was present.
+function removeBlockFromGrid(grid: Record<string, any>, blockId: string): boolean {
+  let removed = false;
+  if (Array.isArray(grid.blocks)) {
+    const before = grid.blocks.length;
+    grid.blocks = grid.blocks.filter((b: unknown) => b !== blockId);
+    if (grid.blocks.length !== before) removed = true;
+  }
+  if (grid.block_layouts && typeof grid.block_layouts === "object") {
+    for (const bp of GRID_BREAKPOINTS) {
+      const bl = grid.block_layouts[bp];
+      if (bl && typeof bl === "object" && bl[blockId] !== undefined) {
+        delete bl[blockId];
+        removed = true;
+      }
+    }
+  }
+  if (Array.isArray(grid.block_hidden)) {
+    grid.block_hidden = grid.block_hidden.filter((b: unknown) => b !== blockId);
+  }
+  return removed;
+}
+
 // ── Shared zod fragments ──────────────────────────────────────────────────────
 const htmlType = z
   .literal(ONLY_BLOCK_TYPE)
   .default(ONLY_BLOCK_TYPE)
   .describe(`Block type. This server only handles HTML blocks, so it must be "${ONLY_BLOCK_TYPE}".`);
+
+// The block's real query/datasource binding. Each entry's query_id points to a saved
+// `query` resource (which holds the datasource + SQL); queryResults[n] maps to ui_queries[n].
+const uiQueriesField = z
+  .array(z.record(z.string(), z.any()))
+  .optional()
+  .describe(
+    "Query/datasource binding (this is how a block gets data — the portal has no `data` " +
+      'field). Array of { enabled, page_size, query_id, filter_strategy }, e.g. ' +
+      '[{ "enabled": true, "page_size": 50, "query_id": "<query-uuid>", ' +
+      '"filter_strategy": { "type": "blacklist", "value": [] } }]. The query_id must ' +
+      "reference a saved query that already has a datasource attached. On update_block, " +
+      "the existing ui_queries is preserved automatically unless you pass a new value."
+  );
 
 const blockPayloadShape = {
   name: z.string().min(1).describe("Display name of the block."),
@@ -117,8 +220,10 @@ const blockPayloadShape = {
     .record(z.string(), z.any())
     .optional()
     .describe(
-      'Query config object, e.g. { "__source__": "<datasource-uuid>", "columns": ["*"], "limit": 500 }.'
+      "Legacy query-config object. Ignored by current portal versions — bind data via " +
+        "`ui_queries` instead. Kept only for backward compatibility."
     ),
+  ui_queries: uiQueriesField,
   css: z
     .union([z.string(), z.array(z.any())])
     .optional()
@@ -239,7 +344,14 @@ function registerBlockTools(server: McpServer): void {
         block_id: z.string().min(1).describe("Block UUID to update."),
         name: z.string().min(1).optional().describe("New display name."),
         type: htmlType.optional(),
-        data: z.record(z.string(), z.any()).optional().describe("New query config object."),
+        data: z
+          .record(z.string(), z.any())
+          .optional()
+          .describe("Legacy query-config object — ignored by current portals; use ui_queries."),
+        ui_queries: uiQueriesField.describe(
+          "Replacement query/datasource binding. Omit to keep the block's existing binding " +
+            "(it is preserved automatically); pass [] to explicitly unbind all queries."
+        ),
         css: z.union([z.string(), z.array(z.any())]).optional().describe("New CSS."),
         json_data: z.record(z.string(), z.any()).optional().describe("New widget/extra config."),
         tags: z.array(z.string()).optional().describe("Replacement tag list."),
@@ -295,6 +407,206 @@ function registerBlockTools(server: McpServer): void {
         if (reason) return fail(reason);
         const r = await request("DELETE", `/api/blocks/${encodeURIComponent(args.block_id)}`);
         return ok(r ?? { deleted: args.block_id });
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+
+  // bind_block_query — give a block its datasource binding (ui_queries) in one call.
+  server.registerTool(
+    "bind_block_query",
+    {
+      title: "Bind a block to a datasource/query",
+      description:
+        "Give an existing block its data binding so currentBlock.queryResults[0] is populated. " +
+        "Pass an existing query_id, OR a datasource_id (a `SELECT *` query is auto-created against " +
+        "it and linked). Sets the block's ui_queries while preserving its html/css/name. The bound " +
+        'query must have a datasource (auto-created ones do) or the portal rejects it.',
+      inputSchema: {
+        block_id: z.string().min(1).describe("Block UUID to bind."),
+        query_id: z
+          .string()
+          .optional()
+          .describe("Existing saved query UUID. Mutually exclusive with datasource_id."),
+        datasource_id: z
+          .string()
+          .optional()
+          .describe("Datasource UUID — auto-creates a SELECT * query against it. Mutually exclusive with query_id."),
+        sql: z
+          .string()
+          .optional()
+          .describe('Optional raw SQL for the auto-created query (use alias `datasource` as the table). Only with datasource_id; default is SELECT *.'),
+        page_size: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Rows fetched into queryResults. Omit for the default null = ALL rows (preferred — the block sees the full dataset). Set a positive number only to cap intentionally (e.g. a small preview); a low cap truncates the data the block sees."),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
+    },
+    async (args) => {
+      try {
+        const reason = blockReason(BLOCK_DOMAIN);
+        if (reason) return fail(reason);
+        if (!args.query_id && !args.datasource_id) return fail("Provide either query_id or datasource_id.");
+        if (args.query_id && args.datasource_id) return fail("Provide only one of query_id / datasource_id.");
+
+        let queryId = args.query_id;
+        let createdQuery: string | null = null;
+        if (!queryId) {
+          const qbody: Record<string, unknown> = {
+            datasources: [{ id: args.datasource_id, alias: "datasource" }],
+          };
+          if (args.sql) qbody.raw_sql = args.sql;
+          else qbody.sql_form = { columns: ["*"] };
+          const q = await request<Record<string, any>>("POST", "/api/queries", qbody);
+          queryId = q.id as string;
+          createdQuery = queryId;
+        } else {
+          const q = await request<Record<string, any>>("GET", `/api/queries/${encodeURIComponent(queryId)}`);
+          const dss = (q && q.datasources) || [];
+          if (!Array.isArray(dss) || dss.length === 0) {
+            return fail(`Query ${queryId} has no datasource ("a query must have a datasource"). Attach one before binding.`);
+          }
+        }
+
+        // Default page_size to null = all rows (preferred). Only cap when explicitly asked.
+        const pageSize = args.page_size ?? null;
+        const uiQueries = [
+          { enabled: true, page_size: pageSize, query_id: queryId, filter_strategy: { type: "blacklist", value: [] } },
+        ];
+
+        const existing = await request<Record<string, unknown>>(
+          "GET",
+          `/api/blocks/${encodeURIComponent(args.block_id)}`
+        );
+        const merged: Record<string, unknown> = { ...buildBlockBody(existing), ui_queries: uiQueries };
+        if (merged.css === undefined || merged.css === null) merged.css = [];
+        const res = await request<Record<string, any>>(
+          "PUT",
+          `/api/blocks/${encodeURIComponent(args.block_id)}`,
+          merged
+        );
+        return ok({
+          block_id: args.block_id,
+          query_id: queryId,
+          created_query: createdQuery,
+          page_size: pageSize,
+          ui_queries: res.ui_queries,
+        });
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+
+  // add_block_to_page — place an existing block on a page (layout grid).
+  server.registerTool(
+    "add_block_to_page",
+    {
+      title: "Add a block to a page",
+      description:
+        "Place an existing block on a page (layout) by inserting it into the page grid " +
+        "(grid.blocks + block_layouts for lg/md/sm). Idempotent — re-adding updates its position. " +
+        'Does not create the block; create_block first, then add it here. Find layouts with ' +
+        'list_resource resource="layout".',
+      inputSchema: {
+        layout_id: z.string().min(1).describe("Layout (page) UUID."),
+        block_id: z.string().min(1).describe("Block UUID to place on the page."),
+        height: z
+          .number()
+          .positive()
+          .optional()
+          .describe("Block height as % of the page when auto-placing (default 50). Ignored when `position` is given."),
+        position: z
+          .record(z.string(), z.any())
+          .optional()
+          .describe(
+            "Optional placement (units %). Either one box { left, top, width, height } applied to all " +
+              "breakpoints, or per-breakpoint { lg:{...}, md:{...}, sm:{...} }. Omit to stack full-width below existing content."
+          ),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+    },
+    async (args) => {
+      try {
+        const reason = blockReason(BLOCK_DOMAIN);
+        if (reason) return fail(reason);
+        const desc = getDescriptor("layout");
+        if (!desc) return fail("Layout resource not available on this server.");
+        const layout = await request<Record<string, any>>(
+          "GET",
+          `/api/layouts/${encodeURIComponent(args.layout_id)}`
+        );
+        const jd: Record<string, any> = layout.json_data && typeof layout.json_data === "object" ? layout.json_data : {};
+        const grid: Record<string, any> = jd.grid && typeof jd.grid === "object" ? jd.grid : {};
+        addBlockToGrid(grid, args.block_id, args.position, args.height ?? 50);
+        jd.grid = grid;
+        await updateResource(desc, args.layout_id, { json_data: jd });
+        return ok({ layout_id: args.layout_id, block_id: args.block_id, placed: true, blocks: grid.blocks });
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+
+  // remove_block_from_page — take a block off a page without deleting the block.
+  server.registerTool(
+    "remove_block_from_page",
+    {
+      title: "Remove a block from a page",
+      description:
+        "Remove a block from a page (layout) grid — grid.blocks + block_layouts (lg/md/sm) + " +
+        "block_hidden. The block object itself is NOT deleted (use delete_block for that). " +
+        "Idempotent: a no-op if the block isn't on the page.",
+      inputSchema: {
+        layout_id: z.string().min(1).describe("Layout (page) UUID."),
+        block_id: z.string().min(1).describe("Block UUID to remove from the page."),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+    },
+    async (args) => {
+      try {
+        const reason = blockReason(BLOCK_DOMAIN);
+        if (reason) return fail(reason);
+        const desc = getDescriptor("layout");
+        if (!desc) return fail("Layout resource not available on this server.");
+        const layout = await request<Record<string, any>>(
+          "GET",
+          `/api/layouts/${encodeURIComponent(args.layout_id)}`
+        );
+        const jd: Record<string, any> = layout.json_data && typeof layout.json_data === "object" ? layout.json_data : {};
+        const grid: Record<string, any> = jd.grid && typeof jd.grid === "object" ? jd.grid : {};
+        const removed = removeBlockFromGrid(grid, args.block_id);
+        if (!removed) {
+          return ok({
+            layout_id: args.layout_id,
+            block_id: args.block_id,
+            removed: false,
+            note: "Block was not on this page.",
+            blocks: grid.blocks ?? [],
+          });
+        }
+        jd.grid = grid;
+        await updateResource(desc, args.layout_id, { json_data: jd });
+        return ok({ layout_id: args.layout_id, block_id: args.block_id, removed: true, blocks: grid.blocks });
       } catch (e) {
         return fail((e as Error).message);
       }
@@ -949,10 +1261,16 @@ function registerPrompts(server: McpServer): void {
         "1. Read the resources zportal://guide/block-structure, zportal://guide/currentblock, " +
           "zportal://guide/zportal-api (filters, modals, block APIs), and " +
           "zportal://guide/conventions (the active always/never rules) — and " +
-          "zportal://guide/amcharts-loader if the block needs a chart.",
-        `2. ${dsLine} Call list_resource with resource=\"datasource\" (and resource=\"query\" on ` +
-          "1.18+) to find the right __source__ UUID, then fetch_sample_rows to see the real " +
-          "column aliases and values.",
+          "zportal://guide/charting if the block needs a chart (ECharts for complex, " +
+          "Chart.js/vanilla for simple; amCharts only if the user explicitly asks).",
+        `2. ${dsLine} Call list_resource with resource=\"datasource\" and resource=\"query\" to ` +
+          "find the datasource and the saved query to bind. Verify the query's REAL output " +
+          "columns with execute_query (or fetch_sample_rows on the datasource) and match the " +
+          "block's column-name constants to them exactly. Bind data via `ui_queries` " +
+          "([{ enabled, page_size, query_id, filter_strategy }]) whose query_id points to a " +
+          "query that already has a datasource — there is no `data`/`__source__` field, and a " +
+          'query with no datasource fails with "a query must have a datasource". Do any ' +
+          "GROUP BY/COUNT/SUM aggregation in the query's SQL, not in the block JS.",
         "3. Author two fields:",
         '   - HTML+JS (body-level only: no <!DOCTYPE>/<html>/<head>/<body>/<style>). Wrap ' +
           'markup in a single <div class="wrapper"> and scope all CSS under .wrapper (suffix ' +

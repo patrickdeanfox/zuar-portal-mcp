@@ -14,6 +14,8 @@
     "require_init": "warn",
     "require_loaded_callback": "warn",
     "no_data_polling": "warn",
+    "require_query_binding": "warn",
+    "no_amcharts_loader": "warn",
     "enforce_theme_vars": "warn"
   },
   "conventions_file": "conventions.md"

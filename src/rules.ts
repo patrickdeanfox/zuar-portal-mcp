@@ -42,6 +42,8 @@ export type RuleId =
   | "require_init"
   | "require_loaded_callback"
   | "no_data_polling"
+  | "require_query_binding"
+  | "no_amcharts_loader"
   | "enforce_theme_vars";
 
 export interface RulesConfig {
@@ -70,6 +72,8 @@ const DEFAULT_SEVERITIES: Record<RuleId, Severity> = {
   require_init: "warn",
   require_loaded_callback: "warn",
   no_data_polling: "warn",
+  require_query_binding: "warn",
+  no_amcharts_loader: "warn",
   enforce_theme_vars: "warn",
 };
 
@@ -108,8 +112,16 @@ const DEFAULT_CONVENTIONS = [
   "- For ASYNC blocks (lib load, fetch, promises): obtain `currentBlock.getOnLoadedCallback()`",
   "  early and call once after render (in a `finally`), or the page can stall (loaded_timeout).",
   "  Sync blocks don't need it. Use getOnAnimatedCallback() for export-after-animation.",
-  "- The block's saved `data` field is its query binding: {__source__: <datasource-uuid>,",
-  "  columns:[SQL aliases], group_by, limit, enabled}.",
+  "- A block binds data via `ui_queries` (NOT a `data` field — the portal has none):",
+  "  [{enabled, page_size, query_id, filter_strategy}], where query_id -> a saved `query`",
+  "  resource that holds the datasource + SQL. queryResults[n] maps to ui_queries[n]. A query",
+  "  with no datasource fails ('a query must have a datasource'). On update_block keep the",
+  "  existing ui_queries or the binding is wiped. Verify the query's real columns with",
+  "  execute_query/fetch_sample_rows and match the JS column constants exactly; aggregate",
+  "  (GROUP BY/COUNT) in the query SQL, not the block. ui_queries page_size: default to null =",
+  "  ALL rows (null/0 = no limit); set a number only to cap intentionally (UI default 50",
+  "  truncates). A hardcoded fallback masks a bad binding by rendering sample data — confirm",
+  "  live rows actually flow.",
   "",
   "## Theme + scoping (enforced)",
   "- Consume the theme via `var(--token, fallback)`; never hardcode hex/fonts. v1.18 token",
@@ -127,7 +139,9 @@ const DEFAULT_CONVENTIONS = [
   "## Interactivity + safety (enforced)",
   "- Prefer `addEventListener`/`name=` inputs over inline on* handlers (which do work but",
   "  belong out of markup). External `<script src>` is stripped — load libs via",
-  "  `zPortal.resources.load(url)` or AMCHARTS_LOADER. Give clickables hover/focus-visible/",
+  "  `zPortal.resources.load(url)`. Charts: ECharts for complex, Chart.js/vanilla for simple,",
+  "  amCharts ONLY if the user asks (and load it 2-step: index.js core first, THEN modules/",
+  "  themes — never the AMCHARTS_LOADER two-block pattern). Give clickables hover/focus-visible/",
   "  active states + ARIA. Use `zPortal.modal.show({...})` for modals (don't hand-roll DOM",
   "  modals); toggle blocks with `zPortal.block.show/hide(iid)`.",
   "- Re-render cleanup: the script re-runs per reload — dispose the prior am5 root",
@@ -278,7 +292,10 @@ export function validateBlock(body: Record<string, unknown>): ValidationResult {
     report("no_unsafe_js", "Remove eval()/new Function()/document.write — blocked in the portal sandbox.");
   }
   if (hasHtml && /<script[^>]+\bsrc\s*=/i.test(html)) {
-    report("no_external_script_src", "External <script src> is stripped — load libraries via zPortal.resources.load(url), the global AMCHARTS_LOADER, or document.createElement('script').");
+    report("no_external_script_src", "External <script src> is stripped — load libraries via zPortal.resources.load(url) (preferred) or document.createElement('script').");
+  }
+  if (hasHtml && /AMCHARTS_LOADER/.test(html)) {
+    report("no_amcharts_loader", "Don't use the AMCHARTS_LOADER two-block pattern. Prefer ECharts (complex charts) or Chart.js/vanilla (simple); use amCharts only when explicitly asked, loaded 2-step via zPortal.resources.load — core index.js first, then the modules/themes (they extend am5).");
   }
   if (hasHtml && /\son[a-z]+\s*=\s*["']/i.test(html)) {
     report("no_inline_event_handlers", "Prefer addEventListener over inline on* handlers — cleaner separation and CSP-safe. (Inline handlers calling global functions do work in the portal, but are harder to maintain.)");
@@ -321,6 +338,27 @@ export function validateBlock(body: Record<string, unknown>): ValidationResult {
     }
     if (/setInterval\s*\(/.test(html) || /DOMContentLoaded/.test(html)) {
       report("no_data_polling", "Query data is ready when the script runs — drop setInterval/DOMContentLoaded polling for data (UI timers are fine).");
+    }
+  }
+
+  // ── Query binding rule ──
+  // The block reads query data but nothing is bound to feed it. The real binding is
+  // `ui_queries` (each entry's query_id -> a saved query -> a datasource); the portal has
+  // no `data`/`__source__` field, so `data` is only honored as a legacy hint. A bound-later
+  // (portal UI) block trips this as a warn — that's the intended reminder.
+  if (hasHtml && html.trim() && /queryResults|getQueryData\s*\(|currentBlock\.(data|columns)\b/.test(html)) {
+    const uiq = body.ui_queries;
+    const hasUiQueryBinding =
+      Array.isArray(uiq) &&
+      uiq.some((q) => q !== null && typeof q === "object" && (q as Record<string, unknown>).query_id);
+    const dataObj = body.data as Record<string, unknown> | undefined;
+    const hasDataBinding =
+      !!dataObj && typeof dataObj.__source__ === "string" && dataObj.__source__.trim() !== "";
+    if (!hasUiQueryBinding && !hasDataBinding) {
+      report(
+        "require_query_binding",
+        "Block reads query data (queryResults/getQueryData) but has no bound query. Add a ui_queries entry whose query_id points to a query that has a datasource (or bind it in the portal UI) — otherwise it renders empty, or its hardcoded fallback rows, instead of live data."
+      );
     }
   }
 

@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "zuar-portal-mcp-server",
   "display_name": "Zuar Portal",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Create and manage Zuar Portal blocks, pages, data sources, queries, users and more with Claude.",
   "long_description": "An MCP server that lets Claude operate a Zuar Portal (zPortal) end to end. Typed, validated tools author HTML blocks; a generic resource layer covers layouts (pages), datasources, queries, db_modifications, partials, themes, users, groups, permissions, access policies, API keys, credentials, snippets, translations, dashboards, tags and system records. Action tools handle sample-row previews, query execution, database modifications, password changes, user group/permission assignment and config. A layered write-safety model keeps low-risk content edits on by default while data (SQL) and admin (users/security) writes stay opt-in.",
   "author": {
@@ -32,6 +32,9 @@
     { "name": "create_block", "description": "Create an HTML block (validated)." },
     { "name": "update_block", "description": "Update an HTML block (validated)." },
     { "name": "delete_block", "description": "Delete a block by UUID." },
+    { "name": "bind_block_query", "description": "Bind a block to a datasource/query (auto-creates the query); sets ui_queries." },
+    { "name": "add_block_to_page", "description": "Place an existing block on a page (layout grid)." },
+    { "name": "remove_block_from_page", "description": "Remove a block from a page without deleting the block." },
     { "name": "describe_resource", "description": "Show a resource's fields, verbs, and risk domain." },
     { "name": "list_resource", "description": "List records of a resource (datasource, layout, query, user, ...)." },
     { "name": "get_resource", "description": "Get one record of a resource by id." },

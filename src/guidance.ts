@@ -47,9 +47,14 @@ block-specific number (#chartdiv1, .wrapper1, CONFIG_1) to avoid collisions.
 When calling create_block / update_block:
 - For html blocks the HTML+JS content lives in \`json_data.html\`, and \`css\` (a string the
   server normalizes — may be stored as a line array) carries the CSS.
-- The block's saved \`data\` field is its query binding, not the CSS:
-  \`{ "__source__": "<datasource-uuid>", "columns": [SQL exprs w/ aliases], "group_by",
-  "limit", "enabled" }\`. Empty \`__source__\`/\`enabled:false\` = no bound query.
+- A block binds to data via \`ui_queries\` (the portal has no \`data\` field):
+  \`[{ "enabled": true, "page_size": 50, "query_id": "<query-uuid>",
+  "filter_strategy": { "type": "blacklist", "value": [] } }]\`. Each query_id -> a saved
+  \`query\` resource holding the datasource + SQL; \`queryResults[n]\` maps to \`ui_queries[n]\`.
+  A query with no datasource is rejected ("a query must have a datasource"). Empty
+  \`ui_queries\` = no bound query. On update_block, keep the existing ui_queries or the
+  binding is wiped — and verify the query's real columns (execute_query/fetch_sample_rows)
+  match the block's column constants, or it silently renders fallback/empty data.
 - Always set type to "html" (this server enforces it).
 
 ## Theme variables (use instead of hardcoded colors)
@@ -120,59 +125,48 @@ For async blocks (library load, fetch, deferred render) resolve
 can hang. Synchronous blocks don't need it.
 `;
 
-const AMCHARTS_LOADER = `# amCharts 5 in zPortal blocks (two-block pattern)
+const CHARTING = `# Charting libraries in zPortal blocks
 
-Always amCharts 5 (\`am5.*\`), never amCharts 4. Scripts load via a single global
-loader block placed once on the page; chart blocks never load scripts directly.
+Choose the library by complexity — do NOT default to amCharts:
+- Complex / interactive (drill-down, dataZoom, many series, mixed types, large data): ECharts 5.
+- Simple (a single bar/line/pie, a sparkline, a gauge): Chart.js, or hand-rolled SVG / canvas / vanilla JS.
+- amCharts 5: ONLY when the user explicitly asks for amCharts.
 
-## Global loader block (add once per page)
-\`\`\`html
-<script>
-window.AMCHARTS_LOADER = (function () {
-  const CONFIG = {
-    cdnBase: 'https://cdn.amcharts.com/lib/5/',
-    scripts: ['index.js','xy.js','percent.js','radar.js','flow.js','hierarchy.js','map.js','stock.js','themes/Animated.js']
-  };
-  let promise = null;
-  function loadScript(src){ return new Promise((res, rej) => {
-    if (document.querySelector('script[src="'+src+'"]')) return res(src);
-    const s = document.createElement('script'); s.src = src;
-    s.onload = () => res(src); s.onerror = () => rej(new Error('Failed: '+src));
-    document.head.appendChild(s);
-  }); }
-  async function loadAll(){ for (const f of CONFIG.scripts) await loadScript(CONFIG.cdnBase + f); return true; }
-  return { load(){ if (promise) return promise; if (window.am5 && window.am5xy) return Promise.resolve(true); promise = loadAll(); return promise; } };
-})();
-</script>
+## Loading — always \`zPortal.resources.load(url)\` (it dedupes + tracks); never a static \`<script src>\`
+ECharts and Chart.js are single UMD files — one load, then build. Obtain
+\`currentBlock.getOnLoadedCallback()\` early and call it once after the chart renders (in a \`finally\`).
+\`\`\`js
+zPortal.resources.load('https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js')
+  .then(() => { const c = echarts.init(el); c.setOption(option); });   // window.echarts is ready
 \`\`\`
 
-## Chart block (wraps all chart code)
-The block script re-runs on every filter/query reload — dispose the prior root first or
-am5 roots leak.
-\`\`\`html
-<div id="chartdiv"></div>
-<script>
-(function () {
-  window.AMCHARTS_LOADER.load().then(function () {
-    const el = document.getElementById("chartdiv");
-    if (el._am5Root) { el._am5Root.dispose(); }          // cleanup before recreate
-    const root = am5.Root.new(el);
-    el._am5Root = root;
+## Re-render cleanup (the block script re-runs on every reload — dispose first or instances leak)
+- ECharts: \`echarts.getInstanceByDom(el)?.dispose()\` before \`echarts.init(el)\`.
+- Chart.js: keep the Chart in a variable and \`.destroy()\` it before re-creating.
+- amCharts: stash the root and \`.dispose()\` it before \`am5.Root.new(...)\`.
+
+## amCharts (only on explicit request) — do NOT use a global AMCHARTS_LOADER two-block pattern
+amCharts 5 has a load-ORDER dependency: the core \`index.js\` must finish before the module files
+(\`xy.js\`, \`percent.js\`, \`themes/Animated.js\`) — they extend \`am5\`. Load in 2 dependency-ordered
+steps with \`zPortal.resources.load\`: core first, then the modules + theme in parallel.
+\`\`\`js
+const BASE = 'https://cdn.amcharts.com/lib/5/';
+zPortal.resources.load(BASE + 'index.js')                  // step 1: core, defines am5
+  .then(() => Promise.all([                                // step 2: modules + theme, after core
+    zPortal.resources.load(BASE + 'xy.js'),
+    zPortal.resources.load(BASE + 'themes/Animated.js'),
+  ]))
+  .then(() => {
+    const el = document.getElementById('chartdiv');
+    if (el._am5Root) el._am5Root.dispose();                // dispose before recreate
+    const root = am5.Root.new(el); el._am5Root = root;
     root.setThemes([am5themes_Animated.new(root)]);
-    // build chart from getQueryData(0)...
-    // if licensed: am5.addLicense('AM5C-...');
+    // build from getQueryData(0); am5.addLicense('AM5C-...') if licensed
   });
-})();
-</script>
 \`\`\`
-
-## Module map by chart type
-- xy / line / column / bar: xy.js
-- pie / donut: percent.js
-- radar / gauge: radar.js
-- sankey: flow.js
-- treemap: hierarchy.js
-- map: map.js (+ geodata)
+Module map (load in step 2 alongside the chart type you need): xy.js (line/column/bar/scatter),
+percent.js (pie/donut), radar.js (radar/gauge), flow.js (sankey), hierarchy.js (treemap),
+map.js (+ geodata), stock.js. Always amCharts 5 (\`am5.*\`), never amCharts 4.
 `;
 
 const ZPORTAL_API = `# zPortal API & interactivity (v1.18+)
@@ -213,13 +207,27 @@ zPortal.page?.name; zPortal.page?.id;
 zPortal.resources.load('https://cdn.../lib.js');   // promise; portal dedupes/tracks it
 \`\`\`
 
-## Native block types (config-driven; \`html\` is used ~99.9% of the time)
-Built-in types you'll encounter or read: \`data-table\`, \`amchart\` (json_data:
-\`{ chartBackend, chartResources:[urls], chartType, configType, chartConfig, chartScript }\`
-where \`chartScript\` builds the chart on \`currentBlock.container\` from \`currentBlock.data\`),
-\`multiselect\` / \`date-time\` / \`clear-filters-button\` (filter controls — their \`filter\`
-field is the column passed to \`setFilters\`), \`tableau-dashboard\`, \`user-menu\`,
-\`navigation\`, \`logo\`. Prefer an \`html\` block unless a native type fits exactly.
+## Native block types (config-driven; \`html\` is the freeform escape hatch)
+Prefer an \`html\` block unless a native type fits exactly. Each native type's behavior lives
+in \`json_data\` (not freeform html). Shapes confirmed in the live v1.18 corpus:
+- \`data-table\`: \`json_data\` is \`{}\` — it renders entirely from its bound \`ui_queries\` (columns
+  come from the query). The most common native type.
+- \`amchart\`: \`{ chartBackend, chartResources:[urls], chartType, configType, chartConfig, chartScript }\`
+  — \`chartScript\` builds on \`currentBlock.container\` from the query data.
+- \`amchart-bar\` / \`amchart-pie\` / \`amchart-timeseries\`: \`{ chartType, chartConfig }\` (declarative;
+  chartConfig has xAxes/yAxes/series whose \`dataFields\` map to query column names).
+- Filter controls — all share a \`filter\` field (the datasource column they filter) plus
+  \`optionValues\`/\`optionLabels\` (columns) and a \`preset\`:
+  \`multiselect\` \`{ inputLabel, filter, optionValues, optionLabels, defaults, allowNull }\`;
+  \`selectFilter\` \`{ inputLabel, filter, optionValues, optionLabels, allowNull, default, defaultLabel }\`;
+  \`date-time\` \`{ inputLabel, filter, default, preset, defaultDateTime, rightAlignDropdown }\`;
+  \`cascading-filter-group\` \`{ dataSourceId, autoSelectFirstValue, filters:[{ type, column, label, order, direction, preset }] }\`;
+  \`parameterControl\` \`{ label, controlType, dataType, parameterName, preset, default }\` (drives a query param, not a filter);
+  \`clear-filters-button\` \`{ buttonText, showIcon }\`.
+- \`text-area\`: \`{ delta }\` (Quill rich-text delta). \`markdown\`: \`{ markdown:[lines] }\`.
+- \`chatbot\`: LLM block \`{ llmConnectionId, systemPrompt:{ base_prompt, persona }, guardrails, uiConfig, debug }\`.
+- \`navigation\` \`{ search, layout, menuTree }\`, \`user-menu\` \`{ showUsername, showIcon, icon }\`,
+  \`logo\` \`{ themeId, showNoLogoError }\`, \`page-share\` \`{}\`, plus \`tableau-dashboard\`, \`applied-filters\`.
 `;
 
 export const GUIDES: Guide[] = [
@@ -245,10 +253,10 @@ export const GUIDES: Guide[] = [
     text: CURRENTBLOCK,
   },
   {
-    uri: "zportal://guide/amcharts-loader",
-    name: "amcharts-loader",
-    title: "amCharts 5 two-block loader pattern",
-    description: "Global AMCHARTS_LOADER block plus per-chart usage and module map.",
-    text: AMCHARTS_LOADER,
+    uri: "zportal://guide/charting",
+    name: "charting",
+    title: "Charting libraries (ECharts / Chart.js / amCharts)",
+    description: "Which charting library to use by complexity, and how to load each via zPortal.resources.load (incl. the amCharts 2-step core-then-modules load — no AMCHARTS_LOADER).",
+    text: CHARTING,
   },
 ];
