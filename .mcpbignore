@@ -6,3 +6,10 @@ node_modules/.cache/
 tsconfig.json
 config.json
 test/
+# Context + reference material — not needed at runtime; keep the bundle lean.
+reference/
+context/
+.claude/
+archive/
+*.pptx
+.zuar-portal/

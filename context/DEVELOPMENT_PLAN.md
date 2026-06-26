@@ -4,7 +4,7 @@
 
 
 
-_Analysis date: 2026-06-25. Sources: `portal_swagger_docs.json` (main REST API, Swagger 2.0, "ZUAR Embedded Analytics"), `portal_swagger_auth_docs.json` (auth service, OpenAPI 3.1, "ZUAR WAF — Authentication"), and `src/*.ts`._
+_Analysis date: 2026-06-25. Sources: `reference/portal_swagger_docs.json` (main REST API, Swagger 2.0, "ZUAR Embedded Analytics"), `reference/portal_swagger_auth_docs.json` (auth service, OpenAPI 3.1, "ZUAR WAF — Authentication"), and `src/*.ts`._
 
 ## 1. Executive summary
 
