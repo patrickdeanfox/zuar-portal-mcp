@@ -23,8 +23,15 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { request } from "./portalClient.js";
-import { blockReason } from "./config.js";
+import { request, resetSession } from "./portalClient.js";
+import {
+  blockReason,
+  activeConfigInfo,
+  projectConfigTarget,
+  resetConfigCache,
+} from "./config.js";
+import fs from "node:fs";
+import path from "node:path";
 import { GUIDES } from "./guidance.js";
 import { getDesign } from "./design.js";
 import {
@@ -259,6 +266,7 @@ export function buildServer(): McpServer {
   registerBlockTools(server);
   registerResourceTools(server);
   registerActionTools(server);
+  registerConfigTools(server);
   registerVcTools(server);
   registerResources(server);
   registerPrompts(server);
@@ -1222,6 +1230,131 @@ function registerActionTools(server: McpServer): void {
 }
 
 // ── Version-control tools (optional; enabled by PORTAL_VC_DIR) ─────────────────
+// ── Config tools (per-project setup) ──────────────────────────────────────────
+function registerConfigTools(server: McpServer): void {
+  // active_config — which config/portal/repo is currently in effect (redacted).
+  server.registerTool(
+    "active_config",
+    {
+      title: "Active portal config",
+      description:
+        "Report which config is in effect for THIS folder: the resolved project config path " +
+        "(nearest .zuar-portal/config.json walking up from the working directory), the active " +
+        "portal URL + user, and version-control status. All secrets are redacted. Use this to " +
+        "confirm you're pointed at the right portal before making changes.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async () => {
+      try {
+        return ok(activeConfigInfo());
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+
+  // init_project_config — write a per-project .zuar-portal/config.json (guided setup).
+  server.registerTool(
+    "init_project_config",
+    {
+      title: "Set up this project's portal config",
+      description:
+        "Create ./.zuar-portal/config.json for THIS folder so the MCP drives a specific portal " +
+        "(and optional version-control repo) here — letting one install serve many portals across " +
+        "many folders. Writes a .zuar-portal/.gitignore so the secrets never get committed, then " +
+        "(by default) validates the credentials with a live login. Refuses to overwrite an existing " +
+        "config unless overwrite=true. Secrets are never echoed back. This is the tool to call when " +
+        "walking a user through first-time setup.",
+      inputSchema: {
+        portal_url: z.string().min(1).describe("Base portal URL, e.g. https://your-portal.zuarbase.net"),
+        api_key: z.string().min(1).describe("Portal API key (Admin → Auth → API Keys)."),
+        user_id: z.string().min(1).describe("Your user UUID (Admin → Users; copy from the URL)."),
+        vc_dir: z
+          .string()
+          .optional()
+          .describe("Optional: path to a git repo to mirror every content write into (enables rollback)."),
+        vc_push: z.boolean().optional().describe("Optional: git push after each commit (needs a remote)."),
+        vc_remote: z.string().optional().describe("Optional: git remote name (default origin)."),
+        vc_remote_url: z
+          .string()
+          .optional()
+          .describe("Optional: git remote URL; the server points the remote at it automatically."),
+        vc_token: z.string().optional().describe("Optional: PAT for HTTPS push (stored locally, never logged)."),
+        vc_username: z.string().optional().describe("Optional: HTTPS username for the token (default x-access-token)."),
+        overwrite: z.boolean().optional().describe("Overwrite an existing project config (default false)."),
+        validate: z.boolean().optional().describe("Validate credentials with a live login (default true)."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async (args) => {
+      try {
+        const target = projectConfigTarget();
+        const dir = path.dirname(target);
+        if (fs.existsSync(target) && !args.overwrite) {
+          return fail(
+            `A project config already exists at ${target}. Pass overwrite=true to replace it ` +
+              `(its current values are not shown for safety).`
+          );
+        }
+
+        const config: Record<string, unknown> = {
+          portal: {
+            url: args.portal_url.replace(/\/$/, ""),
+            apiKey: args.api_key,
+            userId: args.user_id,
+          },
+        };
+        if (args.vc_dir && args.vc_dir.trim()) {
+          const vc: Record<string, unknown> = { dir: args.vc_dir.trim() };
+          if (args.vc_push !== undefined) vc.push = args.vc_push;
+          if (args.vc_remote) vc.remote = args.vc_remote;
+          if (args.vc_remote_url) vc.remote_url = args.vc_remote_url;
+          if (args.vc_token) vc.token = args.vc_token;
+          if (args.vc_username) vc.username = args.vc_username;
+          config.vc = vc;
+        }
+
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(target, JSON.stringify(config, null, 2) + "\n");
+        // Belt-and-suspenders: keep the secret out of git even if the folder is committed.
+        const ignore = path.join(dir, ".gitignore");
+        if (!fs.existsSync(ignore)) {
+          fs.writeFileSync(ignore, "# Local portal credentials — never commit.\nconfig.json\n");
+        }
+
+        // Make the new config live for this process and drop any stale session.
+        resetConfigCache();
+        resetSession();
+
+        const result: Record<string, unknown> = {
+          written: target,
+          gitignore: ignore,
+          vc_configured: Boolean(config.vc),
+          note: "Secrets stored locally and gitignored; not echoed here.",
+        };
+
+        if (args.validate !== false) {
+          try {
+            const me = (await request("GET", "/auth/me")) as Record<string, unknown> | null;
+            result.validated = true;
+            result.signed_in_as = me
+              ? { id: me.id ?? me.user_id, email: me.email, username: me.username }
+              : null;
+          } catch (e) {
+            result.validated = false;
+            result.validation_error = (e as Error).message;
+            result.hint = "Config was written, but the login failed. Re-check url / api_key / user_id.";
+          }
+        }
+        return ok(result);
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+}
+
 function registerVcTools(server: McpServer): void {
   // vc_status — is version control on, and where.
   server.registerTool(
@@ -1508,6 +1641,37 @@ function registerPrompts(server: McpServer): void {
       return {
         messages: [{ role: "user", content: { type: "text", text } }],
       };
+    }
+  );
+
+  // setup_zuar_project — walk the user through per-project credentials.
+  server.registerPrompt(
+    "setup_zuar_project",
+    {
+      title: "Set up this project's Zuar Portal",
+      description:
+        "Guided first-time setup: collect the portal URL, API key and user ID for THIS folder, " +
+        "optionally a version-control repo, then write ./.zuar-portal/config.json and verify the login.",
+      argsSchema: {},
+    },
+    () => {
+      const text = [
+        "Help me connect this project folder to a Zuar Portal. One install can serve many portals — " +
+          "each folder gets its own ./.zuar-portal/config.json.",
+        "",
+        "1. First call active_config to see whether this folder is already configured and which portal " +
+          "is in effect. If it's already pointed at the right portal, stop and tell me.",
+        "2. If not, ask me for (a) the Portal URL (e.g. https://your-portal.zuarbase.net), (b) the API key " +
+          "(Admin → Auth → API Keys), and (c) my user ID / UUID (Admin → Users — it's in the URL). Ask one " +
+          "concise message; don't lecture.",
+        "3. Ask whether I want version control (a git repo that mirrors every content write so changes can " +
+          "be reverted). If yes, collect the repo path and, optionally, a remote URL + token for push.",
+        "4. Call init_project_config with those values (validate defaults on). It writes the config + a " +
+          ".gitignore and does a live login check.",
+        "5. Report the result: confirm who I'm signed in as and that version control is on/off. If validation " +
+          "failed, tell me which field to fix. Never print the API key or token back to me.",
+      ].join("\n");
+      return { messages: [{ role: "user", content: { type: "text", text } }] };
     }
   );
 }

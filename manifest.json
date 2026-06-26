@@ -62,6 +62,8 @@
     { "name": "update_me", "description": "Update the current user's profile (admin writes required)." },
     { "name": "get_config", "description": "Get the portal config document." },
     { "name": "update_config", "description": "Set a config value by path (admin writes required)." },
+    { "name": "active_config", "description": "Report which project config/portal/repo is in effect (secrets redacted)." },
+    { "name": "init_project_config", "description": "Set up this folder's .zuar-portal/config.json for a specific portal (+ optional VC), then validate." },
     { "name": "vc_status", "description": "Report portal version-control status (PORTAL_VC_DIR)." },
     { "name": "snapshot_portal", "description": "Export all content resources to the git repo and commit." },
     { "name": "vc_log", "description": "List version-control commits, optionally for one record." },
@@ -73,6 +75,12 @@
       "description": "Guided workflow to build a correct zPortal HTML block.",
       "arguments": ["goal", "datasource_hint"],
       "text": "Build a Zuar Portal HTML block for: ${arguments.goal}. Datasource hint: ${arguments.datasource_hint}. Read the zportal://guide resources, discover the datasource with list_resource, then create the block."
+    },
+    {
+      "name": "setup_zuar_project",
+      "description": "Guided first-time setup: connect this folder to a portal and write .zuar-portal/config.json.",
+      "arguments": [],
+      "text": "Help me connect this project folder to a Zuar Portal. Call active_config first, then collect the portal URL, API key and user ID (and optional version-control repo), call init_project_config, and confirm the login — never printing secrets back."
     }
   ],
   "tools_generated": false,

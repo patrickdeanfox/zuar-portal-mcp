@@ -15,6 +15,15 @@ import { loadPortalConfig, log } from "./config.js";
 // ── Module state ──────────────────────────────────────────────────────────────
 let sessionCookie: string | null = null;
 
+/**
+ * Drop the cached session so the next request logs in fresh. Call after the
+ * active portal config changes (e.g. init_project_config) so a stale cookie from
+ * a previous portal isn't reused.
+ */
+export function resetSession(): void {
+  sessionCookie = null;
+}
+
 // ── Pure helpers ──────────────────────────────────────────────────────────────
 function buildCookieHeader(setCookie: string[]): string {
   if (!setCookie || setCookie.length === 0) return "";

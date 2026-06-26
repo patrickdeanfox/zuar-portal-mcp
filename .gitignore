@@ -2,6 +2,9 @@ node_modules/
 dist/
 *.mcpb
 config.json
+# Per-project portal credentials (multi-portal config) — never commit.
+.zuar-portal/
+.zuar-portal.json
 .DS_Store
 test-harness.mjs
 # Real portal block exports — may contain customer data; keep out of the repo
