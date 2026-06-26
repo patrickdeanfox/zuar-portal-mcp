@@ -20,6 +20,7 @@
 
 import { request } from "./portalClient.js";
 import { blockReason, type WriteDomain } from "./config.js";
+import { recordWrite, recordDelete } from "./portalVc.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export type Verb = "list" | "get" | "create" | "update" | "delete";
@@ -372,7 +373,12 @@ export async function createResource(
     );
   }
   try {
-    return await request("POST", desc.collectionPath, payload);
+    const out = await request("POST", desc.collectionPath, payload);
+    if (desc.domain === "content") {
+      const rec = out as Record<string, unknown> | null;
+      recordWrite(desc.key, rec?.[desc.idLabel] ?? rec?.id, "create", out);
+    }
+    return out;
   } catch (e) {
     rethrowFriendly(desc, e);
   }
@@ -401,7 +407,9 @@ export async function updateResource(
       const existing = (await request<Record<string, unknown>>("GET", itemPath(desc, id))) ?? {};
       merged = { ...pickWriteFields(desc, existing), ...patch };
     }
-    return await request(desc.updateMethod, itemPath(desc, id), merged);
+    const out = await request(desc.updateMethod, itemPath(desc, id), merged);
+    if (desc.domain === "content") recordWrite(desc.key, id, "update", out);
+    return out;
   } catch (e) {
     rethrowFriendly(desc, e);
   }
@@ -413,6 +421,7 @@ export async function deleteResource(desc: ResourceDescriptor, id: string): Prom
   if (reason) throw new ResourceError(reason);
   try {
     const r = await request("DELETE", itemPath(desc, id));
+    if (desc.domain === "content") recordDelete(desc.key, id);
     return r ?? { deleted: id, resource: desc.key };
   } catch (e) {
     rethrowFriendly(desc, e);

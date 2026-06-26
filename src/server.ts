@@ -27,6 +27,17 @@ import { request } from "./portalClient.js";
 import { blockReason } from "./config.js";
 import { GUIDES } from "./guidance.js";
 import { getDesign } from "./design.js";
+import {
+  recordWrite,
+  recordDelete,
+  stageResource,
+  commitSnapshot,
+  readVersion,
+  previousRef,
+  history,
+  vcStatus,
+  isVcEnabled,
+} from "./portalVc.js";
 import { getRules, validateBlock, type ValidationResult } from "./rules.js";
 import {
   DESCRIPTORS,
@@ -42,7 +53,7 @@ import {
 
 // ── Top-level config ────────────────────────────────────────────────────────
 const SERVER_NAME = "zuar-portal-mcp-server";
-const SERVER_VERSION = "2.1.0";
+const SERVER_VERSION = "2.2.0";
 const ONLY_BLOCK_TYPE = "html";
 const SAMPLE_ROW_LIMIT_DEFAULT = 5;
 const SAMPLE_ROW_LIMIT_MAX = 50;
@@ -248,6 +259,7 @@ export function buildServer(): McpServer {
   registerBlockTools(server);
   registerResourceTools(server);
   registerActionTools(server);
+  registerVcTools(server);
   registerResources(server);
   registerPrompts(server);
 
@@ -327,6 +339,7 @@ function registerBlockTools(server: McpServer): void {
         const v = validateBlock(body);
         if (v.errors.length > 0) return fail(formatViolations(v));
         const res = await request("POST", "/api/blocks", body);
+        recordWrite("block", (res as Record<string, unknown>)?.id, "create", res);
         return ok(withWarnings(res, v.warnings));
       } catch (e) {
         return fail((e as Error).message);
@@ -381,6 +394,7 @@ function registerBlockTools(server: McpServer): void {
         const v = validateBlock(merged);
         if (v.errors.length > 0) return fail(formatViolations(v));
         const res = await request("PUT", `/api/blocks/${encodeURIComponent(block_id)}`, merged);
+        recordWrite("block", block_id, "update", res);
         return ok(withWarnings(res, v.warnings));
       } catch (e) {
         return fail((e as Error).message);
@@ -407,6 +421,7 @@ function registerBlockTools(server: McpServer): void {
         const reason = blockReason(BLOCK_DOMAIN);
         if (reason) return fail(reason);
         const r = await request("DELETE", `/api/blocks/${encodeURIComponent(args.block_id)}`);
+        recordDelete("block", args.block_id);
         return ok(r ?? { deleted: args.block_id });
       } catch (e) {
         return fail((e as Error).message);
@@ -470,6 +485,7 @@ function registerBlockTools(server: McpServer): void {
           const q = await request<Record<string, any>>("POST", "/api/queries", qbody);
           queryId = q.id as string;
           createdQuery = queryId;
+          recordWrite("query", q.id, "create", q);
         } else {
           const q = await request<Record<string, any>>("GET", `/api/queries/${encodeURIComponent(queryId)}`);
           const dss = (q && q.datasources) || [];
@@ -495,6 +511,7 @@ function registerBlockTools(server: McpServer): void {
           `/api/blocks/${encodeURIComponent(args.block_id)}`,
           merged
         );
+        recordWrite("block", args.block_id, "bind", res);
         return ok({
           block_id: args.block_id,
           query_id: queryId,
@@ -1197,6 +1214,177 @@ function registerActionTools(server: McpServer): void {
         const body: Record<string, unknown> = { path: args.path, value: args.value };
         if (args.merge !== undefined) body.merge = args.merge;
         return ok(await request("PUT", "/api/config", body));
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+}
+
+// ── Version-control tools (optional; enabled by PORTAL_VC_DIR) ─────────────────
+function registerVcTools(server: McpServer): void {
+  // vc_status — is version control on, and where.
+  server.registerTool(
+    "vc_status",
+    {
+      title: "Version-control status",
+      description:
+        "Report whether portal version control is enabled (set PORTAL_VC_DIR to a git repo path), " +
+        "the repo location, and push config (PORTAL_VC_PUSH / PORTAL_VC_REMOTE). When enabled, every " +
+        "content write (blocks, layouts, queries, themes, partials, snippets, translations, dashboards, " +
+        "tags) is auto-committed so it can be reverted with restore_resource.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async () => {
+      try {
+        return ok(vcStatus());
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+
+  // snapshot_portal — seed/refresh the repo with all content as of now.
+  server.registerTool(
+    "snapshot_portal",
+    {
+      title: "Snapshot portal content to git",
+      description:
+        "Export every content resource (blocks + layouts/queries/themes/partials/snippets/" +
+        "translations/dashboards/tags) to the version-control repo and commit. Run once to seed " +
+        "history, or anytime to capture a checkpoint. Requires PORTAL_VC_DIR.",
+      inputSchema: {
+        message: z.string().optional().describe("Commit message (default: 'snapshot')."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async (args) => {
+      try {
+        if (!isVcEnabled()) {
+          return fail("Version control is off. Set PORTAL_VC_DIR to a git repo path to enable it.");
+        }
+        const counts: Record<string, number> = {};
+        for (const key of RESOURCE_KEYS) {
+          const desc = getDescriptor(key);
+          if (!desc || desc.domain !== "content" || !desc.verbs.list) continue;
+          let list: unknown;
+          try {
+            list = await listResource(desc);
+          } catch {
+            continue;
+          }
+          const recs = Array.isArray(list)
+            ? list
+            : ((list as Record<string, unknown>)?.result as unknown[]) ?? [];
+          let n = 0;
+          for (const rec of recs) {
+            const r = rec as Record<string, unknown>;
+            const id = r?.[desc.idLabel] ?? r?.id;
+            if (id != null) {
+              stageResource(desc.key, String(id), rec);
+              n++;
+            }
+          }
+          counts[desc.key] = n;
+        }
+        try {
+          const blocks = await request<unknown>("GET", "/api/blocks");
+          const arr = Array.isArray(blocks)
+            ? blocks
+            : ((blocks as Record<string, unknown>)?.result as unknown[]) ?? [];
+          let n = 0;
+          for (const b of arr) {
+            const id = (b as Record<string, unknown>)?.id;
+            if (id != null) {
+              stageResource("block", String(id), b);
+              n++;
+            }
+          }
+          counts.block = n;
+        } catch {
+          /* blocks endpoint optional */
+        }
+        const committed = commitSnapshot(args.message || "snapshot");
+        return ok({ committed, counts, ...vcStatus() });
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+
+  // vc_log — recent commits (optionally for one record).
+  server.registerTool(
+    "vc_log",
+    {
+      title: "Version-control history",
+      description:
+        "List recent commits, optionally scoped to one record. Use a returned hash with " +
+        "restore_resource to revert to that version. Requires PORTAL_VC_DIR.",
+      inputSchema: {
+        resource: z.string().optional().describe("Record kind, e.g. 'block' or 'layout'."),
+        id: z.string().optional().describe("Record id (requires resource)."),
+        limit: z.number().int().positive().optional().describe("Max commits (default 20)."),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async (args) => {
+      try {
+        if (!isVcEnabled()) return fail("Version control is off (set PORTAL_VC_DIR).");
+        return ok({ commits: history(args.resource, args.id, args.limit ?? 20) });
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+
+  // restore_resource — revert a record to a prior committed version and write it back.
+  server.registerTool(
+    "restore_resource",
+    {
+      title: "Restore a record to a previous version",
+      description:
+        "Revert a content record to a prior committed version and write it back to the portal. Omit " +
+        "`ref` to undo the most recent change to this record, or pass a commit hash from vc_log. The " +
+        "restore is itself committed. Requires PORTAL_VC_DIR.",
+      inputSchema: {
+        resource: z
+          .string()
+          .min(1)
+          .describe("Record kind: 'block' or a content resource key (layout, query, theme, partial, snippet, translation, dashboard, tag)."),
+        id: z.string().min(1).describe("Record id."),
+        ref: z
+          .string()
+          .optional()
+          .describe("Git commit hash/ref to restore from. Default: the version before the latest change to this record."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async (args) => {
+      try {
+        if (!isVcEnabled()) return fail("Version control is off (set PORTAL_VC_DIR).");
+        const ref = args.ref ?? previousRef(args.resource, args.id) ?? undefined;
+        if (!ref) {
+          return fail(`No prior version found for ${args.resource} ${args.id}. Run vc_log to see commits.`);
+        }
+        const snap = readVersion(args.resource, args.id, ref) as Record<string, unknown> | null;
+        if (!snap) return fail(`Could not read ${args.resource} ${args.id} at ${ref}.`);
+
+        if (args.resource === "block") {
+          const merged = buildBlockBody(snap);
+          if (merged.css === undefined || merged.css === null) merged.css = [];
+          const res = await request("PUT", `/api/blocks/${encodeURIComponent(args.id)}`, merged);
+          recordWrite("block", args.id, `restore ${ref}`, res);
+          return ok({ restored: "block", id: args.id, from: ref });
+        }
+
+        const desc = getDescriptor(args.resource);
+        if (!desc) return fail(`Unknown resource "${args.resource}".`);
+        if (desc.domain !== "content") {
+          return fail(`restore_resource only handles content resources; "${args.resource}" is ${desc.domain}.`);
+        }
+        await updateResource(desc, args.id, snap); // updateResource records the restore commit
+        return ok({ restored: args.resource, id: args.id, from: ref });
       } catch (e) {
         return fail((e as Error).message);
       }

@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "zuar-portal-mcp-server",
   "display_name": "Zuar Portal",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Create and manage Zuar Portal blocks, pages, data sources, queries, users and more with Claude.",
   "long_description": "An MCP server that lets Claude operate a Zuar Portal (zPortal) end to end. Typed, validated tools author HTML blocks; a generic resource layer covers layouts (pages), datasources, queries, db_modifications, partials, themes, users, groups, permissions, access policies, API keys, credentials, snippets, translations, dashboards, tags and system records. Action tools handle sample-row previews, query execution, database modifications, password changes, user group/permission assignment and config. A layered write-safety model keeps low-risk content edits on by default while data (SQL) and admin (users/security) writes stay opt-in.",
   "author": {
@@ -22,7 +22,11 @@
         "PORTAL_USER_ID": "${user_config.portal_user_id}",
         "PORTAL_READONLY": "${user_config.portal_readonly}",
         "PORTAL_ALLOW_DATA_WRITES": "${user_config.portal_allow_data_writes}",
-        "PORTAL_ALLOW_ADMIN_WRITES": "${user_config.portal_allow_admin_writes}"
+        "PORTAL_ALLOW_ADMIN_WRITES": "${user_config.portal_allow_admin_writes}",
+        "PORTAL_VC_DIR": "${user_config.portal_vc_dir}",
+        "PORTAL_VC_PUSH": "${user_config.portal_vc_push}",
+        "PORTAL_VC_REMOTE": "${user_config.portal_vc_remote}",
+        "PORTAL_DESIGN_FILE": "${user_config.portal_design_file}"
       }
     }
   },
@@ -54,7 +58,11 @@
     { "name": "get_me", "description": "Get the current user." },
     { "name": "update_me", "description": "Update the current user's profile (admin writes required)." },
     { "name": "get_config", "description": "Get the portal config document." },
-    { "name": "update_config", "description": "Set a config value by path (admin writes required)." }
+    { "name": "update_config", "description": "Set a config value by path (admin writes required)." },
+    { "name": "vc_status", "description": "Report portal version-control status (PORTAL_VC_DIR)." },
+    { "name": "snapshot_portal", "description": "Export all content resources to the git repo and commit." },
+    { "name": "vc_log", "description": "List version-control commits, optionally for one record." },
+    { "name": "restore_resource", "description": "Revert a content record to a prior committed version." }
   ],
   "prompts": [
     {
@@ -114,6 +122,32 @@
       "description": "Enable user/group/permission/password/config writes. Off by default.",
       "required": false,
       "default": false
+    },
+    "portal_vc_dir": {
+      "type": "string",
+      "title": "Version-control repo path",
+      "description": "Path to a git repo. When set, every content write (blocks/pages/queries/themes/...) is mirrored to JSON and auto-committed so it can be reverted with restore_resource. Leave blank to disable.",
+      "required": false
+    },
+    "portal_vc_push": {
+      "type": "boolean",
+      "title": "Push version control to remote",
+      "description": "After each commit, git push to the configured remote (requires a remote + auth). Off by default (commits stay local).",
+      "required": false,
+      "default": false
+    },
+    "portal_vc_remote": {
+      "type": "string",
+      "title": "Version-control remote",
+      "description": "Git remote name to push to when 'Push version control' is on.",
+      "required": false,
+      "default": "origin"
+    },
+    "portal_design_file": {
+      "type": "string",
+      "title": "Design system file",
+      "description": "Path to a custom design.md to override the bundled house visual design system. Leave blank to use the default.",
+      "required": false
     }
   }
 }
