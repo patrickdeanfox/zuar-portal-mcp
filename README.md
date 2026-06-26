@@ -6,7 +6,9 @@ An [MCP](https://modelcontextprotocol.io) server that lets **Claude operate your
 
 **Block writes are validated.** HTML blocks go through dedicated, validated tools (`create_block`/`update_block`). Every other resource is reached through generic resource tools. **Writes are gated by risk domain** — content edits are on by default; data (SQL) and admin (users/security) writes are opt-in (see [Write safety](#write-safety)).
 
-> **📚 Full documentation:** the complete guide lives in **[`docs/`](docs/README.md)** — overview, install & config, a reference for all 32 tools, block authoring, the 17 authoring rules, the design system, version control, the in-block `zPortal` API, recipes, loops/automation & data exploration, and troubleshooting.
+> **📚 Full documentation:** the complete guide lives in **[`docs/`](docs/README.md)** — overview, install & config, a reference for all 37 tools, block authoring, the authoring rules, the design system, version control, the in-block `zPortal` API, recipes, loops/automation & data exploration, the [Claude Code agent ecosystem](docs/13-agents-and-workflows.md), and troubleshooting.
+
+> **🏢 Multi-portal & multi-repo (v2.4.0):** one install can drive a **different portal + git repo per folder** via a per-project `./.zuar-portal/config.json`. And when you work in this repo from **Claude Code**, you get a whole **team of specialist agents** (build / style / debug / responsive / theme / bulk / data-expert / advisory) plus slash commands and gated workflows. See [Per-project configuration](#per-project-configuration-multiple-portals) and [Driving it from Claude Code](#driving-it-from-claude-code-the-agent-ecosystem).
 
 ---
 
@@ -17,6 +19,8 @@ An [MCP](https://modelcontextprotocol.io) server that lets **Claude operate your
 - [Getting your portal credentials](#getting-your-portal-credentials)
 - [Install — Claude Desktop (one-click bundle)](#install--claude-desktop-one-click-bundle)
 - [Install — Claude Code & other MCP clients](#install--claude-code--other-mcp-clients)
+- [Per-project configuration (multiple portals)](#per-project-configuration-multiple-portals)
+- [Driving it from Claude Code (the agent ecosystem)](#driving-it-from-claude-code-the-agent-ecosystem)
 - [Getting started](#getting-started)
 - [How it works](#how-it-works)
 - [Troubleshooting](#troubleshooting)
@@ -38,6 +42,11 @@ An [MCP](https://modelcontextprotocol.io) server that lets **Claude operate your
 | `create_block` | Create an HTML block (validated against authoring rules). |
 | `update_block` | Update an HTML block — merged over the current block so untouched fields survive. |
 | `delete_block` | Delete a block by UUID. |
+| `validate_block` | Run the authoring rules against a block payload **without writing** — iterate until clean. |
+| `bind_block_query` | Bind a block to a datasource/query (auto-creates the query); sets `ui_queries`. |
+| `add_block_to_page` | Place a block on a page (layout grid). |
+| `set_page_blocks` | Place **many** blocks on a page in one atomic write (no lost-update race). |
+| `remove_block_from_page` | Take a block off a page without deleting the block. |
 
 ### Generic resource tools
 
@@ -59,7 +68,8 @@ One set of tools operates every other resource. Pass `resource` plus a `body`/`i
 | Tool | What it does | Domain |
 |------|--------------|--------|
 | `fetch_sample_rows` | Preview rows from a datasource to wire blocks to real columns. | read |
-| `execute_query` | Run a saved query by id and return results. | read |
+| `profile_datasource` | Per-column stats (type, distinct values, min/max) to design filters + charts. | read |
+| `execute_query` | Run a saved query by id and return results (optional row `limit`). | read |
 | `run_db_modification` | Run a saved DB write by name. Needs `confirm: true`. | data |
 | `change_password` | Change the current user's password. | admin |
 | `get_user_groups` / `set_user_groups` | Read / replace a user's group membership. | read / admin |
@@ -68,6 +78,8 @@ One set of tools operates every other resource. Pass `resource` plus a `body`/`i
 | `get_config` / `update_config` | Read / set portal config by path. | read / admin |
 | `get_version` | Portal version + about (capability check). | read |
 | `get_rules` | Show active block-authoring rules. | read |
+| `active_config` | Report which project config / portal / VC repo is in effect (secrets redacted). | read |
+| `init_project_config` | Write this folder's `./.zuar-portal/config.json` for a specific portal (+ optional VC) and validate it. | setup |
 
 **Resources** — authoring guidance Claude reads before building, so blocks follow zPortal conventions even if you've never set up a zPortal skill:
 
@@ -75,7 +87,7 @@ One set of tools operates every other resource. Pass `resource` plus a `body`/`i
 - `zportal://guide/currentblock` — reading query data inside a block and reacting to filters
 - `zportal://guide/amcharts-loader` — the amCharts 5 two-block loader pattern
 
-**Prompt** — `create_zportal_block`: a guided "discover data → build → create" workflow you can invoke from your MCP client.
+**Prompts** — `create_zportal_block` (a guided "discover data → build → create" workflow) and `setup_zuar_project` (walks you through connecting this folder to a portal) — invoke either from your MCP client.
 
 ---
 
@@ -183,6 +195,57 @@ Then register it in your client's MCP config (e.g. `claude_desktop_config.json`,
 
 ---
 
+## Per-project configuration (multiple portals)
+
+One MCP install can drive **a different portal — and a different git state-repo — in every folder**.
+When the server starts, it resolves credentials in layers, highest priority first:
+
+1. **Project config** — the nearest `./.zuar-portal/config.json`, found by walking up from the working
+   directory. This is what lets one install serve many portals.
+2. **Environment** — the `PORTAL_*` env vars (how Claude Desktop / MCPB inject a single global portal).
+   Empty values are ignored, so a blank Desktop field never shadows a project value.
+3. **Bundle config** — a `config.json` beside the bundle (dev fallback).
+
+Each field resolves independently, so a project file can override just the portal while inheriting the
+rest from the environment. The file uses the same schema for both the portal and its version-control repo:
+
+```json
+{
+  "portal": { "url": "https://team-a.zuarbase.net", "apiKey": "…", "userId": "…" },
+  "vc":     { "dir": "/path/to/team-a-state", "push": true,
+              "remote_url": "https://github.com/you/team-a-portal-state.git", "token": "…" }
+}
+```
+
+**Set it up without hand-editing JSON:** ask Claude to run **`init_project_config`** (or the
+**`setup_zuar_project`** prompt, or `/portal-setup` in Claude Code). It writes the file + a `.gitignore`,
+validates the credentials with a live login, and refuses to clobber an existing config. **`active_config`**
+shows which portal/repo is currently in effect (secrets redacted). `./.zuar-portal/` is gitignored, so
+credentials never get committed.
+
+---
+
+## Driving it from Claude Code (the agent ecosystem)
+
+When this repo is your Claude Code working directory, the MCP tools come with a **team of specialists**
+in [`.claude/`](.claude/README.md) — see [docs/13 · Agents & Workflows](docs/13-agents-and-workflows.md).
+
+- **The block pipeline:** blocks are never shipped raw. A spec flows through
+  **build → style → responsive → debug → adversary → advisor** — each a focused subagent, with the
+  read-only *adversary* gating the result (and looping back to the debugger while it finds blocking issues).
+- **Specialists:** a **data-expert** (profiles datasources, designs chart-ready queries), a
+  **theme-designer**, a **bulk-operator** (snapshot-first, atomic, revertible), and an **onboarding** agent
+  that runs an alignment Q&A and writes a project brief.
+- **Slash commands:** `/portal-setup`, `/portal-build`, `/portal-theme`, `/portal-bulk`, `/portal-audit`,
+  `/portal-align`.
+- **Workflows:** deterministic multi-agent scripts — `portal-block-pipeline.js` (gated build) and
+  `portal-audit.js` (fan auditors across every block → ranked report).
+
+Everything is grounded in `assets/conventions.md` (the enforced authoring rules) and `assets/design.md`
+(the house visual system), and every write mirrors to the VC repo so it can be reverted.
+
+---
+
 ## Getting started
 
 Once installed, just talk to Claude. A good first session looks like this:
@@ -273,22 +336,32 @@ npx @modelcontextprotocol/inspector node dist/index.js
 Project layout:
 
 ```
-src/
-  index.ts         # stdio entrypoint
-  server.ts        # tools, resources, prompts
-  portalClient.ts  # auth + request (login, X-Api-Key, 401 retry)
-  config.ts        # credential resolution (env, then config.json)
-  guidance.ts      # bundled authoring guidance (the zportal://guide resources)
-manifest.json      # MCPB bundle manifest (Claude Desktop install + config prompts)
+src/                 # MCP server source (compiled to dist/)
+  index.ts           #   stdio entrypoint
+  server.ts          #   tools, resources, prompts
+  portalClient.ts    #   auth + request (login, X-Api-Key, 401 retry)
+  config.ts          #   layered credential resolution (project > env > bundle)
+  resources.ts       #   generic resource registry
+  rules.ts           #   block authoring rules + validation
+  design.ts          #   design-system resource
+  portalVc.ts        #   git version control of content writes
+  guidance.ts        #   bundled authoring guidance (the zportal://guide resources)
+assets/              # runtime-loaded: conventions.md, design.md, rules.json
+manifest.json        # MCPB bundle manifest (Claude Desktop install + config prompts)
+.claude/             # Claude Code agent ecosystem (agents, commands, skills, workflows)
+docs/                # user documentation
+reference/           # API swagger + block-example corpus (not shipped in the .mcpb)
+context/             # development notes, overview, deck (not shipped)
 ```
 
-For local development you can also drop a `config.json` next to the project with a `portal` section instead of using env vars:
+For local development you can drop a project config at `./.zuar-portal/config.json` (or run
+`init_project_config`) with a `portal` section — and optionally a `vc` section — instead of using env vars:
 
 ```json
 { "portal": { "url": "https://your-portal.zuarbase.net", "apiKey": "…", "userId": "…" } }
 ```
 
-`config.json` is gitignored — never commit it.
+`./.zuar-portal/` and any `config.json` are gitignored — never commit them.
 
 ---
 
@@ -303,7 +376,7 @@ mcpb validate manifest.json
 mcpb pack                           # -> zuar-portal-mcp.mcpb
 ```
 
-`.mcpbignore` excludes `src/`, dev files, and any local `config.json` from the bundle. Attach the resulting `.mcpb` to a GitHub Release so non-developers can one-click install it.
+`.mcpbignore` excludes `src/`, dev files, any local `config.json` / `.zuar-portal/`, and the non-runtime `reference/`, `context/` and `.claude/` directories from the bundle. Attach the resulting `.mcpb` to a GitHub Release so non-developers can one-click install it.
 
 ---
 

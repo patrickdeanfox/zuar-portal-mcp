@@ -1,6 +1,6 @@
 # 03 · Tools Reference
 
-All 32 tools, grouped by purpose. Each is tagged with its **risk domain** — see
+All 37 tools, grouped by purpose. Each is tagged with its **risk domain** — see
 [02 · write-safety domains](02-install-and-config.md#write-safety-domains-important).
 
 **Domain legend:** 🟢 read (always available) · 🔵 content (on by default) · 🟠 data
@@ -17,6 +17,20 @@ all non-read tools.
 | `get_config` | 🟢 | The portal config document. No args. |
 | `get_rules` | 🟢 | Active authoring rules: per-rule severities + the conventions text. No args. See [05](05-authoring-rules.md). |
 | `describe_resource` | 🟢 | `resource?` → fields, required-to-create, verbs, risk domain for one resource; omit `resource` to list every resource type. Call before create/update_resource. |
+
+---
+
+## Project configuration `[2.4.0]`
+Resolve and write the per-project portal/VC config — see
+[02 · Per-project configuration](02-install-and-config.md#per-project-configuration-multiple-portals).
+
+| Tool | Dom | Params | Notes |
+|------|-----|--------|-------|
+| `active_config` | 🟢 | — | Resolved project config path, active portal URL + user, and VC status. **All secrets redacted.** |
+| `init_project_config` | 🟢¹ | `portal_url`, `api_key`, `user_id` (required); `vc_dir?`, `vc_push?`, `vc_remote?`, `vc_remote_url?`, `vc_token?`, `vc_username?`; `overwrite?` (default false), `validate?` (default true) | Writes `./.zuar-portal/config.json` + a `.gitignore`, then validates the credentials via a **live login**. Refuses to overwrite an existing config unless `overwrite=true`. **Never echoes secrets.** |
+
+> ¹ `init_project_config` is a **local setup** write — it creates a file on disk, not a portal change,
+> so it isn't gated by the content/data/admin domains (and runs under `PORTAL_READONLY` too).
 
 ---
 
@@ -56,6 +70,7 @@ See [04 · Authoring Blocks](04-authoring-blocks.md) for the full model.
 | `update_block` | 🔵 | `block_id`, plus any of `name/css/json_data/ui_queries/tags/access` | Field-level merge: fields you **omit are preserved**, a field you **pass is replaced wholesale** (not array-merged). So **omit `ui_queries` to keep the binding;** pass `[]` to unbind. Validated + auto-committed `[2.2.0]`. |
 | `delete_block` | 🔵 | `block_id` | Deletes the block object. VC keeps the last copy `[2.2.0]`. |
 | `bind_block_query` | 🔵 | `block_id`, + `query_id` **or** `datasource_id` (+ `sql?`), `page_size?` | One-step binding. With `datasource_id` it auto-creates a `SELECT *` query (use `sql` to customize). `page_size` omitted = **null = all rows** (preferred). The query must have a datasource. |
+| `validate_block` `[2.4.0]` | 🟢 | `name?`, `data?`, `css?`, `json_data?`, `ui_queries?` | Runs the **same authoring rules** as create/update_block **without writing**; returns `{ valid, errors, warnings, summary }`. Iterate a block until clean — catches the literal-`$` trap, `{{ }}` interpolation, data polling, and unscoped CSS. |
 
 **Example — create + bind + place a block:**
 ```
@@ -71,10 +86,12 @@ add_block_to_page { layout_id:"<page>", block_id:"<id>", position:{left:0,top:0,
 |------|-----|--------|-------|
 | `add_block_to_page` | 🔵 | `layout_id`, `block_id`, `position?`, `height?` | Inserts into `grid.blocks` + `block_layouts.{lg,md,sm}`. `position` is one box `{left,top,width,height}` (units %) applied to all breakpoints, or per-breakpoint `{lg,md,sm}`. Omit to stack full-width. Idempotent. |
 | `remove_block_from_page` | 🔵 | `layout_id`, `block_id` | Removes from the grid (block object kept). Idempotent. |
+| `set_page_blocks` `[2.4.0]` | 🔵 | `layout_id`, `blocks: [{ block_id, position?, height? }]`, `replace?` | Places several blocks in **one atomic read-modify-write** — avoids the lost-update race from parallel `add_block_to_page`. `replace=true` rebuilds the page's grid. |
 
-> Both edit the **layout**, so they're auto-committed as a `layout` change `[2.2.0]`.
+> All three edit the **layout**, so they're auto-committed as a `layout` change `[2.2.0]`.
 > ⚠️ Don't call `add_block_to_page` in **parallel** for the same page — each is read-modify-write and
-> concurrent calls race. Place sequentially, or build the full `grid` once via `update_resource`.
+> concurrent calls race. Place sequentially, use `set_page_blocks` for a batch, or build the full
+> `grid` once via `update_resource`.
 
 ---
 
@@ -82,7 +99,8 @@ add_block_to_page { layout_id:"<page>", block_id:"<id>", position:{left:0,top:0,
 | Tool | Dom | Params | Notes |
 |------|-----|--------|-------|
 | `fetch_sample_rows` | 🟢 | `datasource_id`, `limit?` (default 5, max 50) | Peek real columns + values before authoring. |
-| `execute_query` | 🟢 | `query_id`, `params?` ({name:value}) | Run a saved query; returns `columns` + positional `data`. Read-only. |
+| `execute_query` | 🟢 | `query_id`, `params?` ({name:value}), `limit?` `[2.4.0]` | Run a saved query; returns `columns` + positional `data`. Read-only. `limit` truncates the returned rows for cheap exploration — the response is annotated when truncated. |
+| `profile_datasource` `[2.4.0]` | 🟢 | `datasource_id`, `sample_size?` (default 500, max 5000), `distinct_cap?` (default 100) | Per-column stats: inferred type, non-null/empty counts, distinct count, sample distinct values (categoricals), min/max (numerics). For designing filters + charts. |
 | `run_db_modification` | 🟠 | `name`, `params?` / `params_list?` (bulk), `autocommit?`, `ignore_sql_errors?`, **`confirm`** | Executes a saved INSERT/UPDATE/DELETE. Requires `PORTAL_ALLOW_DATA_WRITES=1` **and** `confirm:true`. |
 
 ---

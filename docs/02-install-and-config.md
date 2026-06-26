@@ -36,6 +36,40 @@ three credentials. Example client server config:
   } }
 ```
 
+## Per-project configuration (multiple portals)
+**New in v2.4.0.** One MCP install can now drive a **different portal + git repo per folder** — instead
+of one global portal baked into your client's env, each project directory carries its own credentials
+and its own version-control state.
+
+**Resolution order (layered, highest first, applied per field):**
+1. The nearest **`./.zuar-portal/config.json`** — found by walking **up** from the working directory.
+2. **Environment vars / Claude Desktop `user_config`** — the global portal (see [Credentials](#credentials-required)).
+3. A **bundle-adjacent `config.json`** (beside `dist/`) — the dev fallback.
+
+Layering is **per field**, so env now *fills* fields a project file omits rather than always winning.
+Empty env strings are treated as **unset** — a blank Desktop field won't shadow a project value.
+
+**The file** `./.zuar-portal/config.json` uses the **same schema as before** — a `portal` section and an
+optional `vc` (version-control) section — so each folder gets its own portal **and** its own state repo:
+```json
+{
+  "portal": { "url": "https://your-portal.zuarbase.net", "apiKey": "<api-key>", "userId": "<user-uuid>" },
+  "vc": { "dir": "/path/to/state-repo", "push": false, "remote": "origin",
+          "remote_url": "https://github.com/you/portal-state.git", "token": "<PAT>", "username": "x-access-token" }
+}
+```
+
+**Guided setup** — you don't have to hand-write the file:
+- **`init_project_config`** writes `./.zuar-portal/config.json` (plus a `.zuar-portal/.gitignore` that
+  ignores `config.json`), then **validates the credentials with a live login**. It **refuses to
+  overwrite** an existing config unless `overwrite=true`.
+- **`active_config`** reports which config / portal / repo is currently in effect (secrets redacted).
+- The **`setup_zuar_project`** MCP prompt walks you through it conversationally. In Claude Code, just
+  run **`/portal-setup`**.
+
+**Security.** `.zuar-portal/` and `config.json` are gitignored at the repo root; secrets are never
+logged or echoed.
+
 ## Credentials (required)
 | Env var | Maps from (.mcpb) | What it is |
 |---------|-------------------|------------|
@@ -43,9 +77,14 @@ three credentials. Example client server config:
 | `PORTAL_API_KEY` | `portal_api_key` | zPortal **Admin → Auth → API Keys** |
 | `PORTAL_USER_ID` | `portal_user_id` | Your user UUID (**Admin → Users**, copy from the URL) |
 
+These env vars (and Claude Desktop / MCPB `user_config`) are how a client injects a **single global
+portal**. With per-project config they're now the **middle** layer: env **fills** fields a project file
+omits rather than always winning, and a blank env field is ignored — see
+[Per-project configuration](#per-project-configuration-multiple-portals).
+
 `config.json` fallback (dev): a file beside `dist/` (or one level up) with
-`{ "portal": { "url": "...", "apiKey": "...", "userId": "..." } }`. Env vars win over the file. Secrets
-are never logged.
+`{ "portal": { "url": "...", "apiKey": "...", "userId": "..." } }` — the **lowest-priority** layer,
+overridden by both env and a per-project `./.zuar-portal/config.json`. Secrets are never logged.
 
 ## Write-safety domains (important)
 Every write tool is tagged with a **risk domain**. Domains gate independently, so you can allow
