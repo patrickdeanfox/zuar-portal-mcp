@@ -313,6 +313,33 @@ In the Claude Desktop bundle these are toggles in the install dialog (Read-only 
 
 ---
 
+## Resilience, observability & hardening
+
+Production-grade behaviour for a local, single-user server. Everything below has safe defaults and needs no configuration.
+
+**Resilience** — the portal HTTP client (the single path every tool calls through):
+
+| Behaviour | Default | Tune with |
+|-----------|---------|-----------|
+| Per-attempt timeout | 30 s | `PORTAL_TIMEOUT_MS` |
+| Retries on transient failure (network, 408/425/429/5xx) with exponential backoff + jitter, honouring `Retry-After` | 2 | `PORTAL_MAX_RETRIES`, `PORTAL_BACKOFF_BASE_MS`, `PORTAL_BACKOFF_MAX_MS` |
+| Circuit breaker — fail fast while the upstream is clearly down | opens after 5 consecutive failures, 15 s cooldown | `PORTAL_BREAKER_THRESHOLD`, `PORTAL_BREAKER_COOLDOWN_MS` |
+| Max request body size | 5 MB | `PORTAL_MAX_BODY_BYTES` |
+
+Retry safety: `GET` retries on any transient signal; writes (`POST`/`PUT`/`DELETE`) retry only on a pre-response network error or an explicit `429`/`503` — never on an ambiguous `502`/`504` that may already have applied.
+
+**Observability** — every tool call gets a request id, latency, and an error tally:
+
+- **`get_metrics`** (always-on) reports per-tool call count, error rate, latency (avg/max/last), uptime, and the upstream breaker state. Metadata only — no payloads or secrets. Resets on restart.
+- `get_capabilities` also reports the upstream breaker state.
+- Set **`PORTAL_LOG_FORMAT=json`** for structured (one-JSON-line-per-event) logs to **stderr**; otherwise readable logs appear under `PORTAL_DEBUG=1`.
+
+**Output secret redaction** — secret-bearing fields (`password`, `secret`, `token`, `api_key`, `private_key`, `credentials`, …) are masked as `[redacted]` on resource **read** responses, so hashes/tokens/connection secrets never flow into the model's context. Identifier fields (`*_id`) are never masked, and create/update responses are returned intact so a freshly generated secret can be seen once. Disable with **`PORTAL_REDACT_SECRETS=0`** (e.g. to retrieve a stored key).
+
+The portal base URL is validated as a well-formed `http(s)` origin at startup.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Likely cause / fix |
@@ -321,7 +348,9 @@ In the Claude Desktop bundle these are toggles in the install dialog (Read-only 
 | "Portal login failed: HTTP 401/403" | Wrong API key or user ID, or the user lacks permission. Regenerate the key and confirm the user can manage blocks. |
 | `list_resource` (resource: query) says the endpoint isn't available | Your portal predates the saved-queries API (1.18+). Use `list_resource` with `resource: "datasource"` instead — this is expected, not an error. |
 | Tools don't appear in Claude | Reinstall the `.mcpb`, or restart Claude Desktop. For the clone path, make sure `npm run build` succeeded and the `args` path points at `dist/index.js`. |
-| Want to see what it's doing | Set `PORTAL_DEBUG=1` in the server's environment. Debug logs go to **stderr** only. |
+| Want to see what it's doing | Set `PORTAL_DEBUG=1` in the server's environment (or `PORTAL_LOG_FORMAT=json` for structured logs). Logs go to **stderr** only. |
+| "circuit breaker is open" errors | The portal upstream failed repeatedly and the breaker is failing fast; it auto-recovers after a short cooldown. Check the portal is reachable; `get_metrics` shows the breaker state. |
+| A stored secret comes back as `[redacted]` | Output redaction masks secret fields on reads. Set `PORTAL_REDACT_SECRETS=0` for that session to retrieve it. |
 
 ---
 
