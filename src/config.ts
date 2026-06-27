@@ -66,6 +66,49 @@ function envStr(name: string): string | undefined {
   return t ? t : undefined;
 }
 
+// Read a non-negative integer env var, clamped to [min, max]. Falsy/invalid → fallback.
+function envNum(name: string, fallback: number, min: number, max: number): number {
+  const raw = envStr(name);
+  if (raw === undefined) return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.trunc(n)));
+}
+
+// ── Network resilience configuration ──────────────────────────────────────────
+// Tunables for the portal HTTP client: per-attempt timeout, transient-failure retries
+// with exponential backoff, and a circuit breaker that fails fast while the upstream
+// is clearly down. All have safe defaults; every value is env-overridable.
+export interface NetworkConfig {
+  timeoutMs: number; // per-attempt deadline (AbortController)
+  maxRetries: number; // additional attempts after the first, for transient failures
+  backoffBaseMs: number; // base for exponential backoff (base * 2^attempt + jitter)
+  backoffMaxMs: number; // cap on a single backoff sleep
+  breakerThreshold: number; // consecutive upstream failures before the breaker opens
+  breakerCooldownMs: number; // how long the breaker stays open before a half-open probe
+  maxBodyBytes: number; // reject oversized request bodies before sending (input hardening)
+  maxInputBytes: number; // reject oversized tool inputs at the MCP boundary (before any handler)
+}
+
+let cachedNetwork: NetworkConfig | null = null;
+
+/** Resolve the network-resilience posture from the environment (cached per process). */
+export function loadNetworkConfig(): NetworkConfig {
+  if (cachedNetwork === null) {
+    cachedNetwork = {
+      timeoutMs: envNum("PORTAL_TIMEOUT_MS", 30_000, 1_000, 600_000),
+      maxRetries: envNum("PORTAL_MAX_RETRIES", 2, 0, 8),
+      backoffBaseMs: envNum("PORTAL_BACKOFF_BASE_MS", 250, 0, 60_000),
+      backoffMaxMs: envNum("PORTAL_BACKOFF_MAX_MS", 8_000, 0, 120_000),
+      breakerThreshold: envNum("PORTAL_BREAKER_THRESHOLD", 5, 1, 100),
+      breakerCooldownMs: envNum("PORTAL_BREAKER_COOLDOWN_MS", 15_000, 0, 600_000),
+      maxBodyBytes: envNum("PORTAL_MAX_BODY_BYTES", 5_000_000, 1_024, 100_000_000),
+      maxInputBytes: envNum("PORTAL_MAX_INPUT_BYTES", 2_000_000, 1_024, 100_000_000),
+    };
+  }
+  return cachedNetwork;
+}
+
 // Resolved once per process; safety posture doesn't change mid-run.
 let cachedSafety: SafetyConfig | null = null;
 
@@ -189,6 +232,7 @@ export function resetConfigCache(): void {
   cachedVc = null;
   cachedGating = null;
   cachedAudit = undefined;
+  cachedNetwork = null;
 }
 
 /** The path where init_project_config writes a new project config (under the CWD). */
@@ -423,7 +467,23 @@ export function loadPortalConfig(): PortalConfig {
     );
   }
 
-  return { url: url.replace(/\/$/, ""), apiKey, userId };
+  const cleanUrl = url.replace(/\/$/, "");
+  // Validate the portal base URL: must be a well-formed http(s) origin. Guards against a
+  // mistyped/garbage value (file:, javascript:, missing scheme) being used to build request
+  // URLs against the operator's own portal.
+  let parsed: URL;
+  try {
+    parsed = new URL(cleanUrl);
+  } catch {
+    throw new Error(`Invalid portal url '${cleanUrl}': not a valid URL. Use https://your-portal.example.com.`);
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new Error(
+      `Invalid portal url '${cleanUrl}': scheme must be http or https (got '${parsed.protocol}').`
+    );
+  }
+
+  return { url: cleanUrl, apiKey, userId };
 }
 
 /**

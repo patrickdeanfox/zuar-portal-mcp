@@ -313,6 +313,34 @@ In the Claude Desktop bundle these are toggles in the install dialog (Read-only 
 
 ---
 
+## Resilience, observability & hardening
+
+Production-grade behaviour for a local, single-user server. Everything below has safe defaults and needs no configuration.
+
+**Resilience** — the portal HTTP client (the single path every tool calls through):
+
+| Behaviour | Default | Tune with |
+|-----------|---------|-----------|
+| Per-attempt timeout | 30 s | `PORTAL_TIMEOUT_MS` |
+| Retries on transient failure (network, 408/425/429/5xx) with exponential backoff + jitter, honouring `Retry-After` | 2 | `PORTAL_MAX_RETRIES`, `PORTAL_BACKOFF_BASE_MS`, `PORTAL_BACKOFF_MAX_MS` |
+| Circuit breaker — fail fast while the upstream is clearly down | opens after 5 consecutive failures, 15 s cooldown | `PORTAL_BREAKER_THRESHOLD`, `PORTAL_BREAKER_COOLDOWN_MS` |
+| Max request body size | 5 MB | `PORTAL_MAX_BODY_BYTES` |
+| Max tool input size (rejected at the MCP boundary, before any handler) | 2 MB | `PORTAL_MAX_INPUT_BYTES` |
+
+Retry safety: `GET` retries on any transient signal; writes (`POST`/`PUT`/`DELETE`) retry only on a pre-response network error or an explicit `429`/`503` — never on an ambiguous `502`/`504` that may already have applied.
+
+**Observability** — every tool call gets a request id, latency, and an error tally:
+
+- **`get_metrics`** (always-on) reports per-tool call count, error rate, latency (avg/max/last), uptime, and the upstream breaker state. Metadata only — no payloads or secrets. Resets on restart.
+- `get_capabilities` also reports the upstream breaker state.
+- Set **`PORTAL_LOG_FORMAT=json`** for structured (one-JSON-line-per-event) logs to **stderr**; otherwise readable logs appear under `PORTAL_DEBUG=1`.
+
+**Output secret redaction** — secret-bearing fields (`password`, `secret`, `token`, `api_key`, `private_key`, `credentials`, …) are masked as `[redacted]` on resource **read** responses, so hashes/tokens/connection secrets never flow into the model's context. Identifier fields (`*_id`) are never masked, and create/update responses are returned intact so a freshly generated secret can be seen once. Disable with **`PORTAL_REDACT_SECRETS=0`** (e.g. to retrieve a stored key).
+
+The portal base URL is validated as a well-formed `http(s)` origin at startup.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Likely cause / fix |
@@ -321,7 +349,9 @@ In the Claude Desktop bundle these are toggles in the install dialog (Read-only 
 | "Portal login failed: HTTP 401/403" | Wrong API key or user ID, or the user lacks permission. Regenerate the key and confirm the user can manage blocks. |
 | `list_resource` (resource: query) says the endpoint isn't available | Your portal predates the saved-queries API (1.18+). Use `list_resource` with `resource: "datasource"` instead — this is expected, not an error. |
 | Tools don't appear in Claude | Reinstall the `.mcpb`, or restart Claude Desktop. For the clone path, make sure `npm run build` succeeded and the `args` path points at `dist/index.js`. |
-| Want to see what it's doing | Set `PORTAL_DEBUG=1` in the server's environment. Debug logs go to **stderr** only. |
+| Want to see what it's doing | Set `PORTAL_DEBUG=1` in the server's environment (or `PORTAL_LOG_FORMAT=json` for structured logs). Logs go to **stderr** only. |
+| "circuit breaker is open" errors | The portal upstream failed repeatedly and the breaker is failing fast; it auto-recovers after a short cooldown. Check the portal is reachable; `get_metrics` shows the breaker state. |
+| A stored secret comes back as `[redacted]` | Output redaction masks secret fields on reads. Set `PORTAL_REDACT_SECRETS=0` for that session to retrieve it. |
 
 ---
 
@@ -332,9 +362,25 @@ npm install
 npm run build                 # tsc -> dist/
 PORTAL_DEBUG=1 npm start       # run locally on stdio (debug logs to stderr)
 
+npm test                       # build + run the test suite (no portal/network needed)
+
 # Interactive testing with the MCP Inspector:
 npx @modelcontextprotocol/inspector node dist/index.js
 ```
+
+### Tests
+
+`npm test` compiles the suite to `dist-test/` and runs it with the Node test
+runner. The tests need no portal credentials and make no network calls:
+
+- `test/rules.test.ts` — unit tests for the block authoring validator
+  (`validateBlock`): each footgun rule (`no_unsafe_js`, `no_raw_dollar`,
+  `enforce_theme_vars`, …) and the partial-update behaviour.
+- `test/config.test.ts` — the write-safety posture (`blockReason`) and the
+  tool-gating policy (allowlist/denylist, deny-wins, tool-vs-group).
+- `test/contract.test.ts` — end-to-end MCP contract tests: a real client driving
+  the real server over an in-process transport (initialize, `tools/list`,
+  input-schema rejection, the validation pipeline, and gating).
 
 Project layout:
 
@@ -389,6 +435,9 @@ mcpb pack                           # -> zuar-portal-mcp.mcpb
 - The API Key and User ID are declared **sensitive** in the bundle manifest — masked in the UI and stored securely by Claude Desktop.
 - The server talks only to the Portal URL you configure.
 - `create_block` / `update_block` are restricted to `type: "html"` and reject other types before any portal call.
+- Secret-bearing fields are **redacted** from resource read responses; tool inputs and request bodies are **size-capped**; the portal URL is validated.
+
+See [`SECURITY.md`](SECURITY.md) for the full posture: the per-tool-group data-touch matrix, credential handling, network egress, and data retention.
 
 ---
 

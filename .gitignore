@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-test/
 *.mcpb
 config.json
 # Per-project portal credentials (multi-portal config) — never commit.
