@@ -465,7 +465,23 @@ export function loadPortalConfig(): PortalConfig {
     );
   }
 
-  return { url: url.replace(/\/$/, ""), apiKey, userId };
+  const cleanUrl = url.replace(/\/$/, "");
+  // Validate the portal base URL: must be a well-formed http(s) origin. Guards against a
+  // mistyped/garbage value (file:, javascript:, missing scheme) being used to build request
+  // URLs against the operator's own portal.
+  let parsed: URL;
+  try {
+    parsed = new URL(cleanUrl);
+  } catch {
+    throw new Error(`Invalid portal url '${cleanUrl}': not a valid URL. Use https://your-portal.example.com.`);
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new Error(
+      `Invalid portal url '${cleanUrl}': scheme must be http or https (got '${parsed.protocol}').`
+    );
+  }
+
+  return { url: cleanUrl, apiKey, userId };
 }
 
 /**

@@ -21,6 +21,7 @@
 import { request } from "./portalClient.js";
 import { blockReason, type WriteDomain } from "./config.js";
 import { recordWrite, recordDelete } from "./portalVc.js";
+import { redactSecrets } from "./redact.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export type Verb = "list" | "get" | "create" | "update" | "delete";
@@ -341,7 +342,8 @@ export async function listResource(
   }
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   try {
-    return await request("GET", `${desc.collectionPath}${suffix}`);
+    // Read path: mask secret-bearing fields before they reach the client/model.
+    return redactSecrets(await request("GET", `${desc.collectionPath}${suffix}`));
   } catch (e) {
     rethrowFriendly(desc, e);
   }
@@ -350,7 +352,7 @@ export async function listResource(
 export async function getResource(desc: ResourceDescriptor, id: string): Promise<unknown> {
   ensureVerb(desc, "get");
   try {
-    return await request("GET", itemPath(desc, id));
+    return redactSecrets(await request("GET", itemPath(desc, id)));
   } catch (e) {
     rethrowFriendly(desc, e);
   }
