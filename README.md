@@ -332,9 +332,25 @@ npm install
 npm run build                 # tsc -> dist/
 PORTAL_DEBUG=1 npm start       # run locally on stdio (debug logs to stderr)
 
+npm test                       # build + run the test suite (no portal/network needed)
+
 # Interactive testing with the MCP Inspector:
 npx @modelcontextprotocol/inspector node dist/index.js
 ```
+
+### Tests
+
+`npm test` compiles the suite to `dist-test/` and runs it with the Node test
+runner. The tests need no portal credentials and make no network calls:
+
+- `test/rules.test.ts` — unit tests for the block authoring validator
+  (`validateBlock`): each footgun rule (`no_unsafe_js`, `no_raw_dollar`,
+  `enforce_theme_vars`, …) and the partial-update behaviour.
+- `test/config.test.ts` — the write-safety posture (`blockReason`) and the
+  tool-gating policy (allowlist/denylist, deny-wins, tool-vs-group).
+- `test/contract.test.ts` — end-to-end MCP contract tests: a real client driving
+  the real server over an in-process transport (initialize, `tools/list`,
+  input-schema rejection, the validation pipeline, and gating).
 
 Project layout:
 
