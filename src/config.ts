@@ -87,6 +87,7 @@ export interface NetworkConfig {
   breakerThreshold: number; // consecutive upstream failures before the breaker opens
   breakerCooldownMs: number; // how long the breaker stays open before a half-open probe
   maxBodyBytes: number; // reject oversized request bodies before sending (input hardening)
+  maxInputBytes: number; // reject oversized tool inputs at the MCP boundary (before any handler)
 }
 
 let cachedNetwork: NetworkConfig | null = null;
@@ -102,6 +103,7 @@ export function loadNetworkConfig(): NetworkConfig {
       breakerThreshold: envNum("PORTAL_BREAKER_THRESHOLD", 5, 1, 100),
       breakerCooldownMs: envNum("PORTAL_BREAKER_COOLDOWN_MS", 15_000, 0, 600_000),
       maxBodyBytes: envNum("PORTAL_MAX_BODY_BYTES", 5_000_000, 1_024, 100_000_000),
+      maxInputBytes: envNum("PORTAL_MAX_INPUT_BYTES", 2_000_000, 1_024, 100_000_000),
     };
   }
   return cachedNetwork;

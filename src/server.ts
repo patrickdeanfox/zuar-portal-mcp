@@ -33,6 +33,7 @@ import {
   loadSafetyConfig,
   loadToolGating,
   toolEnabled,
+  loadNetworkConfig,
   appendAudit,
   auditStatus,
   log,
@@ -480,6 +481,26 @@ function isRegistered(name: string): boolean {
   return registeredSnapshot ? registeredSnapshot.get(name) ?? false : toolIsEnabled(name);
 }
 
+// Return an actionable message if a tool input exceeds the configured byte cap, else null.
+// Pure; tolerant of un-serializable inputs (which can't be oversized in any meaningful way).
+function oversizedInput(input: unknown): string | null {
+  if (input === undefined || input === null) return null;
+  let bytes: number;
+  try {
+    bytes = Buffer.byteLength(JSON.stringify(input) ?? "", "utf8");
+  } catch {
+    return null; // not serializable → let the handler deal with it
+  }
+  const { maxInputBytes } = loadNetworkConfig();
+  if (bytes > maxInputBytes) {
+    return (
+      `Input rejected: ${bytes} bytes exceeds the ${maxInputBytes}-byte limit ` +
+      `(PORTAL_MAX_INPUT_BYTES). Split the work into smaller calls.`
+    );
+  }
+  return null;
+}
+
 // Wrap a tool handler with central instrumentation: a per-invocation request id,
 // latency + error metrics, and a structured log line on entry/exit. The handler keeps
 // its own try/catch (returning fail()); this also catches an UNEXPECTED throw and turns
@@ -489,6 +510,15 @@ function instrument(name: string, handler: (...a: unknown[]) => unknown): (...a:
     const requestId = newRequestId();
     const t0 = Date.now();
     logEvent("tool.call", { request_id: requestId, tool: name });
+    // Boundary input guard: reject an oversized tool input before any handler logic or
+    // network call. Schema validation has already run; this bounds total payload size
+    // uniformly across every tool (untrusted-args hardening).
+    const tooBig = oversizedInput(args[0]);
+    if (tooBig) {
+      recordCall(name, Date.now() - t0, true);
+      logEvent("tool.rejected", { request_id: requestId, tool: name, reason: "input_too_large" });
+      return fail(tooBig);
+    }
     try {
       const result = (await handler(...args)) as ToolResult;
       const ms = Date.now() - t0;

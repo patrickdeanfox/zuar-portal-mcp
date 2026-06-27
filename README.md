@@ -325,6 +325,7 @@ Production-grade behaviour for a local, single-user server. Everything below has
 | Retries on transient failure (network, 408/425/429/5xx) with exponential backoff + jitter, honouring `Retry-After` | 2 | `PORTAL_MAX_RETRIES`, `PORTAL_BACKOFF_BASE_MS`, `PORTAL_BACKOFF_MAX_MS` |
 | Circuit breaker — fail fast while the upstream is clearly down | opens after 5 consecutive failures, 15 s cooldown | `PORTAL_BREAKER_THRESHOLD`, `PORTAL_BREAKER_COOLDOWN_MS` |
 | Max request body size | 5 MB | `PORTAL_MAX_BODY_BYTES` |
+| Max tool input size (rejected at the MCP boundary, before any handler) | 2 MB | `PORTAL_MAX_INPUT_BYTES` |
 
 Retry safety: `GET` retries on any transient signal; writes (`POST`/`PUT`/`DELETE`) retry only on a pre-response network error or an explicit `429`/`503` — never on an ambiguous `502`/`504` that may already have applied.
 
@@ -434,6 +435,9 @@ mcpb pack                           # -> zuar-portal-mcp.mcpb
 - The API Key and User ID are declared **sensitive** in the bundle manifest — masked in the UI and stored securely by Claude Desktop.
 - The server talks only to the Portal URL you configure.
 - `create_block` / `update_block` are restricted to `type: "html"` and reject other types before any portal call.
+- Secret-bearing fields are **redacted** from resource read responses; tool inputs and request bodies are **size-capped**; the portal URL is validated.
+
+See [`SECURITY.md`](SECURITY.md) for the full posture: the per-tool-group data-touch matrix, credential handling, network egress, and data retention.
 
 ---
 
