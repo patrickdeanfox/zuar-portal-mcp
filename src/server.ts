@@ -23,7 +23,8 @@
 
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { request, resetSession } from "./portalClient.js";
+import { request, resetSession, breakerStatus } from "./portalClient.js";
+import { newRequestId, recordCall, metricsSnapshot, logEvent } from "./observability.js";
 import {
   blockReason,
   activeConfigInfo,
@@ -454,11 +455,11 @@ const TOOL_GROUPS: Record<string, string> = {
   // setup (per-project credential bootstrap)
   active_config: "setup", init_project_config: "setup",
   // meta (always-available introspection)
-  get_capabilities: "meta",
+  get_capabilities: "meta", get_metrics: "meta",
 };
 // Introspection/setup tools that stay available even when their group is gated off,
 // so an operator can always see and fix the configuration.
-const ALWAYS_ON = new Set<string>(["get_capabilities", "active_config"]);
+const ALWAYS_ON = new Set<string>(["get_capabilities", "get_metrics", "active_config"]);
 
 function groupOf(name: string): string {
   return TOOL_GROUPS[name] ?? "meta";
@@ -479,20 +480,53 @@ function isRegistered(name: string): boolean {
   return registeredSnapshot ? registeredSnapshot.get(name) ?? false : toolIsEnabled(name);
 }
 
-// Wrap the McpServer so registerTool() silently skips disabled tools, WITHOUT
-// editing every call site. registerResource/registerPrompt and all other methods
-// pass straight through to the real server (bound so SDK private state is intact).
+// Wrap a tool handler with central instrumentation: a per-invocation request id,
+// latency + error metrics, and a structured log line on entry/exit. The handler keeps
+// its own try/catch (returning fail()); this also catches an UNEXPECTED throw and turns
+// it into a structured error result so a tool bug can never break the JSON-RPC channel.
+function instrument(name: string, handler: (...a: unknown[]) => unknown): (...a: unknown[]) => unknown {
+  return async (...args: unknown[]) => {
+    const requestId = newRequestId();
+    const t0 = Date.now();
+    logEvent("tool.call", { request_id: requestId, tool: name });
+    try {
+      const result = (await handler(...args)) as ToolResult;
+      const ms = Date.now() - t0;
+      const isError = result?.isError === true;
+      recordCall(name, ms, isError);
+      logEvent("tool.result", { request_id: requestId, tool: name, ms, ok: !isError });
+      return result;
+    } catch (e) {
+      const ms = Date.now() - t0;
+      recordCall(name, ms, true);
+      const message = (e as Error)?.message ?? String(e);
+      logEvent("tool.error", { request_id: requestId, tool: name, ms, error: message });
+      return fail(`Unexpected error in ${name}: ${message}`);
+    }
+  };
+}
+
+// Wrap the McpServer so registerTool() (a) silently skips disabled tools and (b) wraps
+// the surviving handlers with instrument(), WITHOUT editing every call site.
+// registerResource/registerPrompt and all other methods pass straight through to the
+// real server (bound so SDK private state is intact).
 function gateServer(real: McpServer): McpServer {
   return new Proxy(real, {
     get(target, prop, receiver) {
       if (prop === "registerTool") {
         return (name: string, ...rest: unknown[]) => {
-          if (toolIsEnabled(name)) {
-            return (target.registerTool as (...a: unknown[]) => unknown)(name, ...rest);
+          if (!toolIsEnabled(name)) {
+            log("tool disabled by gating:", name, `(group ${groupOf(name)})`);
+            // Return a harmless stub; call sites ignore registerTool's return value.
+            return { remove() {}, enable() {}, disable() {}, update() {} };
           }
-          log("tool disabled by gating:", name, `(group ${groupOf(name)})`);
-          // Return a harmless stub; call sites ignore registerTool's return value.
-          return { remove() {}, enable() {}, disable() {}, update() {} };
+          // The handler is the last argument (registerTool(name, config, handler)).
+          const wrapped = rest.slice();
+          const last = wrapped[wrapped.length - 1];
+          if (typeof last === "function") {
+            wrapped[wrapped.length - 1] = instrument(name, last as (...a: unknown[]) => unknown);
+          }
+          return (target.registerTool as (...a: unknown[]) => unknown)(name, ...wrapped);
         };
       }
       const value = Reflect.get(target, prop, receiver);
@@ -1784,8 +1818,31 @@ function registerConfigTools(server: McpServer): void {
             note: "Content writes are on unless read-only; data/admin writes are opt-in (PORTAL_ALLOW_DATA_WRITES / PORTAL_ALLOW_ADMIN_WRITES).",
           },
           audit: auditStatus(),
+          upstream: breakerStatus(),
           config: activeConfigInfo(),
         });
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+
+  // get_metrics — in-memory tool-call metrics for this process (no secrets, no payloads).
+  server.registerTool(
+    "get_metrics",
+    {
+      title: "Tool-call metrics",
+      description:
+        "Report in-memory observability metrics for THIS server process: per-tool call count, " +
+        "error count/rate, and latency (avg/max/last ms), plus rolled-up totals, uptime, and the " +
+        "upstream circuit-breaker state. Metadata only — no payloads or secrets. Resets when the " +
+        "process restarts. Use it to spot a failing tool or a degraded portal upstream.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async () => {
+      try {
+        return ok({ ...metricsSnapshot(), upstream: breakerStatus() });
       } catch (e) {
         return fail((e as Error).message);
       }
