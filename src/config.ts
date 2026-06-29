@@ -127,6 +127,19 @@ export function loadSafetyConfig(): SafetyConfig {
   return cachedSafety;
 }
 
+// ── Referential-integrity posture ─────────────────────────────────────────────
+// How strictly to treat a write that references a record which doesn't exist
+// (a layout pointing at a deleted block, a query at a deleted datasource, ...).
+//   "error" (default) — refuse the write; "warn" — allow but report; "off" — skip.
+// Only CALLER-INTRODUCED references are checked, so an unrelated edit to a record
+// that already had a dangling ref is never penalised. Env: PORTAL_REF_INTEGRITY.
+export type IntegrityMode = "error" | "warn" | "off";
+
+export function loadRefIntegrityMode(): IntegrityMode {
+  const v = (envStr("PORTAL_REF_INTEGRITY") ?? "").toLowerCase();
+  return v === "warn" || v === "off" ? v : "error";
+}
+
 /**
  * Decide whether a write in `domain` is permitted. Returns null when allowed,
  * or an actionable operator-facing message (which env flag to set) when blocked.

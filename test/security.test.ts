@@ -4,8 +4,36 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import os from "node:os";
+import fs from "node:fs";
+import path from "node:path";
 import { redactSecrets } from "../src/redact.js";
-import { loadPortalConfig } from "../src/config.js";
+import { loadPortalConfig, resetConfigCache } from "../src/config.js";
+
+// loadPortalConfig gives a discovered project config.json precedence over env, so
+// these tests must run from a clean CWD (an empty temp dir) with the config cache
+// reset — otherwise the repo-root config.json shadows the env vars under test.
+// Restores CWD + env + cache afterwards so the rest of the suite is unaffected.
+function withCleanConfigEnv<T>(env: Record<string, string>, fn: () => T): T {
+  const prevCwd = process.cwd();
+  const keys = ["PORTAL_URL", "PORTAL_API_KEY", "PORTAL_USER_ID"] as const;
+  const prevEnv = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "zpmcp-cfg-"));
+  try {
+    process.chdir(tmp);
+    for (const [k, v] of Object.entries(env)) process.env[k] = v;
+    resetConfigCache();
+    return fn();
+  } finally {
+    process.chdir(prevCwd);
+    for (const k of keys) {
+      if (prevEnv[k] === undefined) delete process.env[k];
+      else process.env[k] = prevEnv[k];
+    }
+    resetConfigCache();
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
 
 test("redactSecrets masks secret-bearing fields but keeps identifiers and data", () => {
   const input = {
@@ -49,23 +77,22 @@ test("redaction can be disabled via PORTAL_REDACT_SECRETS=0", () => {
 });
 
 test("loadPortalConfig accepts a clean https url and strips a trailing slash", () => {
-  process.env.PORTAL_URL = "https://portal.example.com/";
-  process.env.PORTAL_API_KEY = "k";
-  process.env.PORTAL_USER_ID = "u";
-  const cfg = loadPortalConfig();
-  assert.equal(cfg.url, "https://portal.example.com");
+  withCleanConfigEnv(
+    { PORTAL_URL: "https://portal.example.com/", PORTAL_API_KEY: "k", PORTAL_USER_ID: "u" },
+    () => assert.equal(loadPortalConfig().url, "https://portal.example.com")
+  );
 });
 
 test("loadPortalConfig rejects a non-http(s) scheme", () => {
-  process.env.PORTAL_URL = "ftp://portal.example.com";
-  process.env.PORTAL_API_KEY = "k";
-  process.env.PORTAL_USER_ID = "u";
-  assert.throws(() => loadPortalConfig(), /scheme must be http or https/);
+  withCleanConfigEnv(
+    { PORTAL_URL: "ftp://portal.example.com", PORTAL_API_KEY: "k", PORTAL_USER_ID: "u" },
+    () => assert.throws(() => loadPortalConfig(), /scheme must be http or https/)
+  );
 });
 
 test("loadPortalConfig rejects a malformed url", () => {
-  process.env.PORTAL_URL = "not a url";
-  process.env.PORTAL_API_KEY = "k";
-  process.env.PORTAL_USER_ID = "u";
-  assert.throws(() => loadPortalConfig(), /not a valid URL/);
+  withCleanConfigEnv(
+    { PORTAL_URL: "not a url", PORTAL_API_KEY: "k", PORTAL_USER_ID: "u" },
+    () => assert.throws(() => loadPortalConfig(), /not a valid URL/)
+  );
 });

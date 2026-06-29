@@ -1,6 +1,6 @@
 # 03 · Tools Reference
 
-All 38 tools, grouped by purpose. Each is tagged with its **risk domain** — see
+All 40 tools, grouped by purpose. Each is tagged with its **risk domain** — see
 [02 · write-safety domains](02-install-and-config.md#write-safety-domains-important).
 
 **Domain legend:** 🟢 read (always available) · 🔵 content (on by default) · 🟠 data
@@ -57,11 +57,14 @@ Operate over the 17 resource types (layouts, queries, themes, datasources, users
 |------|-----|--------|-------|
 | `list_resource` | 🟢 | `resource`, `query?` (url params, e.g. `{only_names:true}`), `limit?` (max 500), `offset?`, `only_names?` `[2.5.0]` | Discovery — find a UUID before authoring. `limit`/`offset` page the results; `only_names` returns a client-side `{id,name}` projection (**reliable regardless of portal support**). **Back-compat:** with no pagination args the raw portal response is returned unchanged. Large lists may exceed the token limit and dump to a file. |
 | `get_resource` | 🟢 | `resource`, `id` | One record by id (or name, for tags). |
-| `create_resource` | 🔵/🟠/🔴 | `resource`, `body` | Domain = the resource's domain. Unknown body fields dropped. |
-| `update_resource` | 🔵/🟠/🔴 | `resource`, `id`, `body` | PUT is full-replace; the server fetches + merges your fields over the current record so untouched fields survive. |
-| `delete_resource` | 🔵/🟠/🔴 | `resource`, `id`, **`confirm`** | Requires `confirm:true` `[2.5.0]`. Cannot be undone on the portal (but VC keeps the last committed copy `[2.2.0]`). |
+| `create_resource` | 🔵/🟠/🔴 | `resource`, `body` | Domain = the resource's domain. Unknown body fields dropped. **Structure + reference checked before write `[2.6.0]`.** |
+| `update_resource` | 🔵/🟠/🔴 | `resource`, `id`, `body` | PUT is full-replace; the server fetches + merges your fields over the current record so untouched fields survive. Refuses to demote/remove the last admin or your own account (user resource) `[2.6.0]`. |
+| `delete_resource` | 🔵/🟠/🔴 | `resource`, `id`, **`confirm`**, `force?` | Requires `confirm:true` `[2.5.0]`. Refuses to orphan dependents — pass `force:true` to override — and to remove the last admin / your own account `[2.6.0]`. Cannot be undone on the portal (but VC keeps the last committed copy `[2.2.0]`). |
+| `validate_portal` | 🟢 | `limit?` | **Read-only integrity sweep `[2.6.0]`** — reports malformed records, dangling references and unscoped mass-write SQL across the whole portal. Fixes nothing. See [16 · Safety & Integrity Gates](16-safety-and-integrity.md). |
 
 > Content-domain creates/updates/deletes are auto-committed to version control `[2.2.0]`.
+> Every content write also passes a structural + referential safety gate `[2.6.0]` — see
+> [doc 15](15-structural-integrity.md) and [doc 16](16-safety-and-integrity.md).
 
 **Example — create a saved query (SELECT \* over a datasource):**
 ```json
@@ -83,7 +86,7 @@ See [04 · Authoring Blocks](04-authoring-blocks.md) for the full model.
 | `get_block` | 🟢 | `block_id` | Full block incl. `json_data.html`, `css`, `ui_queries`. Large blocks dump to a file. |
 | `create_block` | 🔵 | `name`, `json_data` (`{html:[…], isolated}`), `css?`, `ui_queries?`, `tags?`, `access?` | Type is always `html`. Runs `validateBlock` — **errors hard-reject**, warns are returned. Auto-committed `[2.2.0]`. |
 | `update_block` | 🔵 | `block_id`, plus any of `name/css/json_data/ui_queries/tags/access` | Field-level merge: fields you **omit are preserved**, a field you **pass is replaced wholesale** (not array-merged). So **omit `ui_queries` to keep the binding;** pass `[]` to unbind. Validated + auto-committed `[2.2.0]`. |
-| `delete_block` | 🔵 | `block_id`, **`confirm`** | Deletes the block object — requires `confirm:true` `[2.5.0]`. VC keeps the last copy `[2.2.0]`. |
+| `delete_block` | 🔵 | `block_id`, **`confirm`**, `force?` | Deletes the block object — requires `confirm:true` `[2.5.0]`. Refuses if the block is placed on any page/partial — pass `force:true` to override `[2.6.0]`. VC keeps the last copy `[2.2.0]`. |
 | `bind_block_query` | 🔵 | `block_id`, + `query_id` **or** `datasource_id` (+ `sql?`), `page_size?` | One-step binding. With `datasource_id` it auto-creates a `SELECT *` query (use `sql` to customize). `page_size` omitted = **null = all rows** (preferred). The query must have a datasource. |
 | `validate_block` `[2.4.0]` | 🟢 | `name?`, `data?`, `css?`, `json_data?`, `ui_queries?` | Runs the **same authoring rules** as create/update_block **without writing**; returns `{ valid, errors, warnings, summary }`. Iterate a block until clean — catches the literal-`$` trap, `{{ }}` interpolation, data polling, and unscoped CSS. |
 
@@ -116,7 +119,7 @@ add_block_to_page { layout_id:"<page>", block_id:"<id>", position:{left:0,top:0,
 | `fetch_sample_rows` | 🟢 | `datasource_id`, `limit?` (default 5, max 50) | Peek real columns + values before authoring. |
 | `execute_query` | 🟢 | `query_id`, `params?` ({name:value}), `limit?` `[2.4.0]` | Run a saved query; returns `columns` + positional `data`. Read-only. `limit` truncates the returned rows for cheap exploration — the response is annotated when truncated. |
 | `profile_datasource` `[2.4.0]` | 🟢 | `datasource_id`, `sample_size?` (default 500, max 5000), `distinct_cap?` (default 100) | Per-column stats: inferred type, non-null/empty counts, distinct count, sample distinct values (categoricals), min/max (numerics). For designing filters + charts. |
-| `run_db_modification` | 🟠 | `name`, `params?` / `params_list?` (bulk), `autocommit?`, `ignore_sql_errors?`, **`confirm`** | Executes a saved INSERT/UPDATE/DELETE. Requires `PORTAL_ALLOW_DATA_WRITES=1` **and** `confirm:true`. |
+| `run_db_modification` | 🟠 | `name`, `params?` / `params_list?` (bulk), `autocommit?`, `ignore_sql_errors?`, **`confirm`**, `allow_unfiltered?` | Executes a saved INSERT/UPDATE/DELETE. Requires `PORTAL_ALLOW_DATA_WRITES=1` **and** `confirm:true`. Refuses an unscoped mass write (UPDATE/DELETE without WHERE, TRUNCATE, DROP) unless `allow_unfiltered:true` `[2.6.0]`. |
 
 ---
 

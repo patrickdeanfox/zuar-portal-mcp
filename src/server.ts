@@ -34,6 +34,8 @@ import {
   loadToolGating,
   toolEnabled,
   loadNetworkConfig,
+  loadRefIntegrityMode,
+  loadPortalConfig,
   appendAudit,
   auditStatus,
   log,
@@ -55,6 +57,19 @@ import {
 } from "./portalVc.js";
 import { getRules, validateBlock, type ValidationResult } from "./rules.js";
 import {
+  referencesOf,
+  findMissingRefs,
+  makeExistingIdResolver,
+  dependentsOf,
+  dependentsNeed,
+  sqlWriteRisks,
+  describeSqlRisk,
+  adminMutationRisk,
+  type Dependent,
+  type DependentsCtx,
+} from "./safety.js";
+import { normalizeAndValidateForWrite } from "./structure.js";
+import {
   DESCRIPTORS,
   RESOURCE_KEYS,
   getDescriptor,
@@ -68,7 +83,7 @@ import {
 
 // ── Top-level config ────────────────────────────────────────────────────────
 const SERVER_NAME = "zuar-portal-mcp-server";
-const SERVER_VERSION = "2.5.0";
+const SERVER_VERSION = "2.6.0";
 const ONLY_BLOCK_TYPE = "html";
 const SAMPLE_ROW_LIMIT_DEFAULT = 5;
 const SAMPLE_ROW_LIMIT_MAX = 50;
@@ -95,6 +110,14 @@ const SERVER_INSTRUCTIONS = [
   "(users/security) writes are OPT-IN env flags and are reported by get_capabilities. Destructive tools",
   "(deletes, user-membership replacement, db modifications) require confirm:true. When a write is",
   "blocked, the error names the flag to set. Prefer execute_query/list_resource limits to stay cheap.",
+  "",
+  "Integrity & safety gates (enforced server-side, cannot be bypassed): every content write is checked",
+  "for portal-compatible STRUCTURE (a page/partial missing grid.layouts is auto-repaired or rejected) and",
+  "for dangling REFERENCES (a page/block pointing at a deleted block/query/datasource is refused; relax",
+  "with PORTAL_REF_INTEGRITY=warn). Deletes run pre-delete IMPACT analysis and refuse to orphan dependents",
+  "unless force=true; user deletes/demotions refuse to remove the last admin or your own account; an",
+  "unscoped mass-write (UPDATE/DELETE with no WHERE, TRUNCATE, DROP) needs allow_unfiltered=true. Run the",
+  "read-only validate_portal anytime to sweep for malformed records, dangling refs and risky SQL.",
 ].join("\n");
 
 // ── Pure helpers ──────────────────────────────────────────────────────────────
@@ -141,6 +164,93 @@ function fail(message: string): ToolResult {
 // Records metadata only — never payload bodies or secrets.
 function audit(domain: "content" | "data" | "admin", op: string, kind: string, id?: unknown): void {
   appendAudit({ domain, op, kind, id: id === undefined ? undefined : String(id) });
+}
+
+// Referential check for a block write (ui_queries -> query). Returns a refusal
+// message when integrity mode is "error" and a referenced query is missing (the
+// block would render blank); null when clean, off, or warn (warn just logs).
+async function blockRefRefusal(body: Record<string, unknown>): Promise<string | null> {
+  const mode = loadRefIntegrityMode();
+  if (mode === "off") return null;
+  const specs = referencesOf("block", body);
+  if (specs.length === 0) return null;
+  let missing;
+  try {
+    missing = await findMissingRefs(specs, makeExistingIdResolver());
+  } catch (e) {
+    log(`[refs] block query lookup failed; skipping: ${(e as Error).message}`);
+    return null;
+  }
+  if (missing.length === 0) return null;
+  const detail = missing.map((m) => `${m.field} -> ${m.kind} ${m.id} (not found)`).join("; ");
+  if (mode === "warn") {
+    log(`[refs] block binds to a missing query (allowed by PORTAL_REF_INTEGRITY=warn): ${detail}`);
+    return null;
+  }
+  return (
+    `Refusing: this block binds to a query that does not exist — it would render blank.\n- ${detail}\n` +
+    `Create/keep the query, fix the query_id, or set PORTAL_REF_INTEGRITY=warn to allow it.`
+  );
+}
+
+// Read-only collection endpoints used to compute who depends on a delete target.
+const DEP_COLLECTION_PATHS: Record<string, string> = {
+  layouts: "/api/layouts",
+  partials: "/api/partials",
+  queries: "/api/queries",
+  blocks: "/api/blocks",
+  system: "/api/system",
+};
+
+// Fetch only the collections needed for `targetKind` and compute dependents.
+// Best-effort: a failed lookup logs and is skipped (never blocks a delete spuriously).
+async function computeDependents(targetKind: string, targetId: string): Promise<Dependent[]> {
+  const need = dependentsNeed(targetKind);
+  if (need.length === 0) return [];
+  const ctx: DependentsCtx = {};
+  for (const key of need) {
+    const path = DEP_COLLECTION_PATHS[key];
+    if (!path) continue;
+    try {
+      (ctx as Record<string, unknown[]>)[key] = asCollection(await request("GET", path));
+    } catch (e) {
+      log(`[impact] failed to fetch ${key} for ${targetKind} dependents: ${(e as Error).message}`);
+    }
+  }
+  return dependentsOf(targetKind, targetId, ctx);
+}
+
+// Pre-delete impact gate: refuse a delete that would orphan dependents unless
+// force=true. Returns a refusal message, or null when safe / forced.
+function impactRefusal(targetKind: string, deps: Dependent[], force: boolean | undefined): string | null {
+  if (deps.length === 0 || force === true) return null;
+  const lines = deps
+    .map((d) => `  - ${d.kind}${d.name ? ` "${d.name}"` : ""}${d.id ? ` (${d.id})` : ""}: ${d.via}`)
+    .join("\n");
+  return (
+    `Refusing to delete this ${targetKind}: ${deps.length} record(s) depend on it and would break:\n` +
+    `${lines}\n` +
+    `Reassign/remove those dependents first, or re-run with force=true to delete anyway ` +
+    `(this leaves the references dangling).`
+  );
+}
+
+// Admin/lockout gate for user mutations. Reads the user list + the operator's own
+// id and refuses an op that would remove the last admin or lock the operator out.
+// Best-effort lookup: a failed read logs and is skipped (write gating still applies).
+async function adminRefusal(
+  verb: "delete" | "update",
+  targetUserId: string,
+  body: Record<string, unknown> | undefined
+): Promise<string | null> {
+  try {
+    const users = asCollection(await request("GET", "/auth/users"));
+    const selfUserId = loadPortalConfig().userId;
+    return adminMutationRisk(verb, targetUserId, body, { users, selfUserId });
+  } catch (e) {
+    log(`[admin] safety lookup failed; skipping: ${(e as Error).message}`);
+    return null;
+  }
 }
 
 // Normalize a portal list response to an array (handles {result}/{items}/{data}/{results}/bare array).
@@ -443,7 +553,7 @@ const TOOL_GROUPS: Record<string, string> = {
   add_block_to_page: "blocks", remove_block_from_page: "blocks", set_page_blocks: "blocks",
   // resources (generic CRUD)
   list_resource: "resources", get_resource: "resources", create_resource: "resources",
-  update_resource: "resources", delete_resource: "resources",
+  update_resource: "resources", delete_resource: "resources", validate_portal: "resources",
   // data (SQL / datasources / db modifications)
   fetch_sample_rows: "data", profile_datasource: "data", execute_query: "data", run_db_modification: "data",
   // users (users / groups / permissions / passwords)
@@ -673,6 +783,8 @@ function registerBlockTools(server: McpServer): void {
         if (body.css === undefined) body.css = [];
         const v = validateBlock(body);
         if (v.errors.length > 0) return fail(formatViolations(v));
+        const refusal = await blockRefRefusal(body);
+        if (refusal) return fail(refusal);
         const res = await request("POST", "/api/blocks", body);
         recordWrite("block", (res as Record<string, unknown>)?.id, "create", res);
         return ok(withWarnings(res, v.warnings));
@@ -728,6 +840,10 @@ function registerBlockTools(server: McpServer): void {
         if (merged.css === undefined || merged.css === null) merged.css = [];
         const v = validateBlock(merged);
         if (v.errors.length > 0) return fail(formatViolations(v));
+        // Check only the caller-provided fields (e.g. a new ui_queries), not the
+        // merged-in existing binding, so an unrelated edit isn't blocked.
+        const refusal = await blockRefRefusal(buildBlockBody(rest));
+        if (refusal) return fail(refusal);
         const res = await request("PUT", `/api/blocks/${encodeURIComponent(block_id)}`, merged);
         recordWrite("block", block_id, "update", res);
         return ok(withWarnings(res, v.warnings));
@@ -743,11 +859,16 @@ function registerBlockTools(server: McpServer): void {
     {
       title: "Delete a block",
       description:
-        "Delete a block by UUID. Requires confirm:true. If version control is on (vc_status), the " +
-        "deletion is committed and can be reverted with restore_resource; otherwise it cannot be undone.",
+        "Delete a block by UUID. Requires confirm:true. Refuses if the block is placed on any page/" +
+        "partial (pass force=true to override). If version control is on (vc_status), the deletion is " +
+        "committed and can be reverted with restore_resource; otherwise it cannot be undone.",
       inputSchema: {
         block_id: z.string().min(1).describe("Block UUID to delete."),
         confirm: z.boolean().describe("Must be true to actually delete — guards against accidental loss."),
+        force: z
+          .boolean()
+          .optional()
+          .describe("Delete even if the block is placed on pages/partials (leaves those slots dangling). Default false."),
       },
       annotations: {
         readOnlyHint: false,
@@ -761,6 +882,10 @@ function registerBlockTools(server: McpServer): void {
         const reason = blockReason(BLOCK_DOMAIN);
         if (reason) return fail(reason);
         if (args.confirm !== true) return fail("Refusing to delete: set confirm=true to delete this block.");
+        // Pre-delete impact: refuse to orphan pages/partials that place this block.
+        const deps = await computeDependents("block", args.block_id);
+        const impact = impactRefusal("block", deps, args.force);
+        if (impact) return fail(impact);
         const r = await request("DELETE", `/api/blocks/${encodeURIComponent(args.block_id)}`);
         recordDelete("block", args.block_id);
         return ok(r ?? { deleted: args.block_id });
@@ -1246,6 +1371,11 @@ function registerResourceTools(server: McpServer): void {
       try {
         const desc = getDescriptor(args.resource);
         if (!desc) return fail(`Unknown resource "${args.resource}".`);
+        // Admin lockout protection: refuse demoting the last admin / yourself.
+        if (desc.key === "user") {
+          const ar = await adminRefusal("update", args.id, args.body);
+          if (ar) return fail(ar);
+        }
         const out = await updateResource(desc, args.id, args.body);
         if (desc.domain !== "content") audit(desc.domain, "update", desc.key, args.id);
         return ok(out);
@@ -1262,12 +1392,17 @@ function registerResourceTools(server: McpServer): void {
       title: "Delete a resource record",
       description:
         "Delete a record by id (or name, for tags). Requires confirm:true. Same write gating as " +
-        "create_resource — the record's risk domain must be enabled. Content records can be reverted " +
-        "with restore_resource when version control is on; others cannot be undone.",
+        "create_resource — the record's risk domain must be enabled. Refuses if other records depend " +
+        "on the target (pass force=true to override) and refuses to remove the last admin / your own " +
+        "account. Content records can be reverted with restore_resource when version control is on.",
       inputSchema: {
         resource: resourceEnum,
         id: z.string().min(1).describe("Record id to delete."),
         confirm: z.boolean().describe("Must be true to actually delete — guards against accidental loss."),
+        force: z
+          .boolean()
+          .optional()
+          .describe("Delete even if other records depend on it (leaves those references dangling). Default false."),
       },
       annotations: {
         readOnlyHint: false,
@@ -1280,12 +1415,164 @@ function registerResourceTools(server: McpServer): void {
       try {
         const desc = getDescriptor(args.resource);
         if (!desc) return fail(`Unknown resource "${args.resource}".`);
+        const reason = blockReason(desc.domain);
+        if (reason) return fail(reason);
         if (args.confirm !== true) {
           return fail(`Refusing to delete: set confirm=true to delete this ${args.resource}.`);
         }
+        // Admin lockout protection (last admin / self).
+        if (desc.key === "user") {
+          const ar = await adminRefusal("delete", args.id, undefined);
+          if (ar) return fail(ar);
+        }
+        // Dependents impact — refuse to orphan other records unless force=true.
+        const deps = await computeDependents(desc.key, args.id);
+        const impact = impactRefusal(desc.key, deps, args.force);
+        if (impact) return fail(impact);
         const out = await deleteResource(desc, args.id);
         if (desc.domain !== "content") audit(desc.domain, "delete", desc.key, args.id);
         return ok(out);
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+
+  // validate_portal — read-only integrity sweep over the whole portal.
+  server.registerTool(
+    "validate_portal",
+    {
+      title: "Validate portal integrity (read-only)",
+      description:
+        "Sweep every page (layout), partial, theme, query, block, db_modification and system record " +
+        "and report anything that would break or render wrong: structurally malformed records (e.g. a " +
+        "page missing grid.layouts — the 'all pages vanished' bug), dangling references (a page/block " +
+        "pointing at a deleted block/query/datasource), and unscoped mass-write SQL (UPDATE/DELETE with " +
+        "no WHERE, TRUNCATE, DROP). Fixes nothing — run it after bulk changes or on a schedule to catch " +
+        "latent breakage before users do.",
+      inputSchema: {
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .optional()
+          .describe("Cap the number of issues returned (still reports the full counts). Omit for all."),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    async (args) => {
+      try {
+        const fetchCol = async (path: string): Promise<unknown[]> => {
+          try {
+            return asCollection(await request("GET", path));
+          } catch (e) {
+            log(`[validate_portal] failed to fetch ${path}: ${(e as Error).message}`);
+            return [];
+          }
+        };
+        const [layouts, partials, themes, queries, blocks, dbmods, system, datasources] = await Promise.all([
+          fetchCol("/api/layouts"),
+          fetchCol("/api/partials"),
+          fetchCol("/api/themes"),
+          fetchCol("/api/queries"),
+          fetchCol("/api/blocks"),
+          fetchCol("/api/db_modifications"),
+          fetchCol("/api/system"),
+          fetchCol("/api/datasources"),
+        ]);
+
+        const idOf = (r: unknown): string | null =>
+          r && typeof r === "object" && typeof (r as Record<string, unknown>).id === "string"
+            ? ((r as Record<string, unknown>).id as string)
+            : null;
+        const nameOf = (r: unknown): string | null =>
+          r && typeof r === "object" && typeof (r as Record<string, unknown>).name === "string"
+            ? ((r as Record<string, unknown>).name as string)
+            : null;
+        const idSet = (recs: unknown[]): Set<string> => {
+          const s = new Set<string>();
+          for (const r of recs) {
+            const id = idOf(r);
+            if (id) s.add(id);
+          }
+          return s;
+        };
+        // In-memory resolver built from the already-fetched collections (no re-fetch).
+        const existing: Record<string, Set<string>> = {
+          block: idSet(blocks),
+          query: idSet(queries),
+          layout: idSet(layouts),
+          theme: idSet(themes),
+          datasource: idSet(datasources),
+        };
+        const resolver = async (kind: string): Promise<Set<string>> => existing[kind] ?? new Set<string>();
+
+        type Issue = { kind: string; id: string | null; name: string | null; type: string; detail: string };
+        const issues: Issue[] = [];
+        const add = (kind: string, rec: unknown, type: string, detail: string): void => {
+          issues.push({ kind, id: idOf(rec) ?? nameOf(rec), name: nameOf(rec), type, detail });
+        };
+
+        // 1) Structural shape — records that are malformed or missing required structure.
+        const shapeKinds: Array<[string, unknown[]]> = [
+          ["layout", layouts],
+          ["partial", partials],
+          ["theme", themes],
+          ["query", queries],
+        ];
+        for (const [kind, recs] of shapeKinds) {
+          for (const rec of recs) {
+            const r = normalizeAndValidateForWrite(kind, rec as Record<string, unknown>);
+            if (r.errors.length > 0) add(kind, rec, "malformed", r.errors.join(" | "));
+            else if (r.repairs.length > 0) add(kind, rec, "missing_structure", r.repairs.join("; "));
+          }
+        }
+
+        // 2) Dangling references.
+        const refKinds: Array<[string, unknown[]]> = [
+          ["layout", layouts],
+          ["partial", partials],
+          ["query", queries],
+          ["block", blocks],
+          ["system", system],
+        ];
+        for (const [kind, recs] of refKinds) {
+          for (const rec of recs) {
+            const specs = referencesOf(kind, rec as Record<string, unknown>);
+            if (specs.length === 0) continue;
+            const missing = await findMissingRefs(specs, resolver);
+            for (const m of missing) add(kind, rec, "dangling_ref", `${m.field} -> ${m.kind} ${m.id} (not found)`);
+          }
+        }
+
+        // 3) Unscoped mass-write SQL in saved db_modifications.
+        for (const rec of dbmods) {
+          const sql = rec && typeof rec === "object" ? (rec as Record<string, unknown>).sql : undefined;
+          if (typeof sql === "string") {
+            for (const risk of sqlWriteRisks(sql)) add("db_modification", rec, "unscoped_sql", describeSqlRisk(risk));
+          }
+        }
+
+        const total = issues.length;
+        const byType: Record<string, number> = {};
+        for (const i of issues) byType[i.type] = (byType[i.type] ?? 0) + 1;
+        const returned = args.limit !== undefined ? issues.slice(0, args.limit) : issues;
+        return ok({
+          healthy: total === 0,
+          issue_count: total,
+          by_type: byType,
+          scanned: {
+            layouts: layouts.length,
+            partials: partials.length,
+            themes: themes.length,
+            queries: queries.length,
+            blocks: blocks.length,
+            db_modifications: dbmods.length,
+            system: system.length,
+          },
+          issues: returned,
+          truncated: returned.length < total,
+        });
       } catch (e) {
         return fail((e as Error).message);
       }
@@ -1489,8 +1776,9 @@ function registerActionTools(server: McpServer): void {
       title: "Run a database modification",
       description:
         "Execute a saved db_modification (INSERT/UPDATE/DELETE) by name. This WRITES to a database. " +
-        "Requires data writes enabled (PORTAL_ALLOW_DATA_WRITES=1) and confirm=true. Pass `params` " +
-        "as a { name: value } map, or `params_list` for bulk rows.",
+        "Requires data writes enabled (PORTAL_ALLOW_DATA_WRITES=1) and confirm=true. Refuses an " +
+        "unscoped mass write (UPDATE/DELETE with no WHERE, TRUNCATE, DROP) unless allow_unfiltered=true. " +
+        "Pass `params` as a { name: value } map, or `params_list` for bulk rows.",
       inputSchema: {
         name: z.string().min(1).describe("db_modification name to run."),
         params: z
@@ -1506,6 +1794,10 @@ function registerActionTools(server: McpServer): void {
         confirm: z
           .boolean()
           .describe("Must be true to actually run — guards against accidental DB writes."),
+        allow_unfiltered: z
+          .boolean()
+          .optional()
+          .describe("Must be true to run an UNSCOPED mass write (UPDATE/DELETE without WHERE, TRUNCATE, DROP). Default false."),
       },
       annotations: {
         readOnlyHint: false,
@@ -1520,6 +1812,27 @@ function registerActionTools(server: McpServer): void {
         if (reason) return fail(reason);
         if (args.confirm !== true) {
           return fail("Refusing to run: set confirm=true to execute this database modification.");
+        }
+        // Blast-radius guard: inspect the saved SQL and refuse an unscoped mass write
+        // unless explicitly allowed. Best-effort — a failed lookup doesn't block the run.
+        if (args.allow_unfiltered !== true) {
+          try {
+            const mods = asCollection(await request("GET", "/api/db_modifications"));
+            const found = mods.find(
+              (m) => m && typeof m === "object" && (m as Record<string, unknown>).name === args.name
+            ) as Record<string, unknown> | undefined;
+            const sql = found && typeof found.sql === "string" ? found.sql : "";
+            const risks = sqlWriteRisks(sql);
+            if (risks.length > 0) {
+              const detail = risks.map((r) => `  - ${describeSqlRisk(r)}: ${r.statement}`).join("\n");
+              return fail(
+                `Refusing to run "${args.name}": its SQL contains an UNSCOPED mass write:\n${detail}\n` +
+                  `If this is intentional, re-run with allow_unfiltered=true.`
+              );
+            }
+          } catch (e) {
+            log(`[sql] db_modification SQL preflight failed; proceeding: ${(e as Error).message}`);
+          }
         }
         const mod: Record<string, unknown> = { name: args.name };
         if (args.params) mod.params = args.params;

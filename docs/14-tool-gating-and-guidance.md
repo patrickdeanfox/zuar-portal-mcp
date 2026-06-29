@@ -14,7 +14,7 @@ calls exist, how they're explained, and what gets recorded.
 The defaults assume a builder driving a portal they own. Enterprise deployments often want the opposite:
 **least privilege** (an analyst-facing server that can build blocks but can never touch users or portal
 config) and **guided usage** (so an operator — or an agent — orients before acting instead of guessing
-at 38 tools). v2.5.0 adds three independent levers for that:
+at 40 tools). v2.5.0 adds three independent levers for that:
 
 - **Tool gating** — freeze the tool surface to a chosen subset of capability groups.
 - **Guided usage** — server `instructions`, a `get_capabilities` tool, and a `zuar_portal_quickstart`

@@ -19,9 +19,11 @@
  */
 
 import { request } from "./portalClient.js";
-import { blockReason, type WriteDomain } from "./config.js";
+import { blockReason, log, loadRefIntegrityMode, type WriteDomain } from "./config.js";
 import { recordWrite, recordDelete } from "./portalVc.js";
 import { redactSecrets } from "./redact.js";
+import { normalizeAndValidateForWrite } from "./structure.js";
+import { referencesOf, findMissingRefs, makeExistingIdResolver, type MissingRef } from "./safety.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export type Verb = "list" | "get" | "create" | "update" | "delete";
@@ -316,6 +318,59 @@ function ensureVerb(desc: ResourceDescriptor, verb: Verb): void {
   }
 }
 
+// Hard structural gate: normalise safe defaults and refuse a write whose shape
+// would break the portal renderer. Runs on the FINAL body (post field-pick, and
+// for PUT post-merge) so it reflects exactly what lands in the DB. This is the
+// last line of defence and cannot be bypassed by any tool or agent — every
+// create/update path funnels through here.
+function gateStructure(
+  desc: ResourceDescriptor,
+  verb: "create" | "update",
+  body: Record<string, unknown>
+): Record<string, unknown> {
+  const { body: normalized, repairs, errors } = normalizeAndValidateForWrite(desc.key, body);
+  if (errors.length > 0) {
+    throw new ResourceError(
+      `Refusing to ${verb} ${desc.key}: structurally incompatible with the portal and would break it.\n- ` +
+        errors.join("\n- ")
+    );
+  }
+  if (repairs.length > 0) {
+    log(`[structure] auto-repaired ${desc.key} on ${verb}: ${repairs.join("; ")}`);
+  }
+  return normalized;
+}
+
+// Referential-integrity gate: refuse (or warn on) a write that points at records
+// which don't exist. Checks only the CALLER-PROVIDED body, so editing a record
+// that already had a dangling ref doesn't get blocked for an unrelated change.
+async function gateReferences(desc: ResourceDescriptor, body: Record<string, unknown>): Promise<void> {
+  const mode = loadRefIntegrityMode();
+  if (mode === "off") return;
+  const specs = referencesOf(desc.key, body);
+  if (specs.length === 0) return;
+  let missing: MissingRef[];
+  try {
+    missing = await findMissingRefs(specs, makeExistingIdResolver());
+  } catch (e) {
+    // A lookup failure must not silently pass a bad write nor hard-fail a good one:
+    // log and continue (the structural gate + portal still apply).
+    log(`[refs] lookup failed for ${desc.key}; skipping referential check: ${(e as Error).message}`);
+    return;
+  }
+  if (missing.length === 0) return;
+  const detail = missing.map((m) => `${m.field} -> ${m.kind} ${m.id} (not found)`).join("\n- ");
+  if (mode === "warn") {
+    log(`[refs] ${desc.key} references missing records (allowed by PORTAL_REF_INTEGRITY=warn):\n- ${detail}`);
+    return;
+  }
+  throw new ResourceError(
+    `Refusing to write ${desc.key}: it references record(s) that do not exist, which would render broken.\n- ` +
+      detail +
+      `\nCreate the referenced record first, fix the id, or set PORTAL_REF_INTEGRITY=warn to allow it.`
+  );
+}
+
 // Turn a portal 404 on a collection into a capability hint instead of a raw error.
 function rethrowFriendly(desc: ResourceDescriptor, e: unknown): never {
   const msg = (e as Error).message ?? String(e);
@@ -366,14 +421,16 @@ export async function createResource(
   const reason = blockReason(desc.domain);
   if (reason) throw new ResourceError(reason);
 
-  const payload = pickWriteFields(desc, body);
-  const missing = desc.requiredCreate.filter((f) => payload[f] === undefined);
+  const picked = pickWriteFields(desc, body);
+  const missing = desc.requiredCreate.filter((f) => picked[f] === undefined);
   if (missing.length > 0) {
     throw new ResourceError(
       `Cannot create ${desc.key}: missing required field(s) ${missing.join(", ")}. ` +
         `Run describe_resource for the full field list.`
     );
   }
+  const payload = gateStructure(desc, "create", picked);
+  await gateReferences(desc, payload);
   try {
     const out = await request("POST", desc.collectionPath, payload);
     if (desc.domain === "content") {
@@ -401,6 +458,9 @@ export async function updateResource(
       `No updatable fields provided for ${desc.key}. Allowed: ${desc.writeFields.join(", ")}.`
     );
   }
+  // Referential check on the caller's patch (not the merged record) so an unrelated
+  // edit to a record with a pre-existing dangling ref isn't blocked.
+  await gateReferences(desc, patch);
   try {
     // Full-replace PUT: merge the patch over the current record so untouched
     // fields aren't nulled. PATCH endpoints accept the partial directly.
@@ -409,6 +469,8 @@ export async function updateResource(
       const existing = (await request<Record<string, unknown>>("GET", itemPath(desc, id))) ?? {};
       merged = { ...pickWriteFields(desc, existing), ...patch };
     }
+    // Final structural check on exactly what will be written.
+    merged = gateStructure(desc, "update", merged);
     const out = await request(desc.updateMethod, itemPath(desc, id), merged);
     if (desc.domain === "content") recordWrite(desc.key, id, "update", out);
     return out;

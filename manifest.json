@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "zuar-portal-mcp-server",
   "display_name": "Zuar Portal",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "description": "Create and manage Zuar Portal blocks, pages, data sources, queries, users and more with Claude.",
   "long_description": "An MCP server that lets Claude operate a Zuar Portal (zPortal) end to end. Typed, validated tools author HTML blocks; a generic resource layer covers layouts (pages), datasources, queries, db_modifications, partials, themes, users, groups, permissions, access policies, API keys, credentials, snippets, translations, dashboards, tags and system records. Action tools handle sample-row previews, query execution, database modifications, password changes, user group/permission assignment and config. A layered write-safety model keeps low-risk content edits on by default while data (SQL) and admin (users/security) writes stay opt-in.",
   "author": {
@@ -53,7 +53,8 @@
     { "name": "get_resource", "description": "Get one record of a resource by id." },
     { "name": "create_resource", "description": "Create a record (write-gated by risk domain)." },
     { "name": "update_resource", "description": "Update a record (merge over current; write-gated)." },
-    { "name": "delete_resource", "description": "Delete a record (write-gated)." },
+    { "name": "delete_resource", "description": "Delete a record (write-gated; refuses to orphan dependents or remove the last admin)." },
+    { "name": "validate_portal", "description": "Read-only integrity sweep: malformed records, dangling references, unscoped mass-write SQL." },
     { "name": "get_rules", "description": "Get active block-authoring rules." },
     { "name": "get_version", "description": "Get portal version / about info." },
     { "name": "fetch_sample_rows", "description": "Preview rows from a datasource." },

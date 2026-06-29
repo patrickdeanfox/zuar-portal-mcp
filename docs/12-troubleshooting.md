@@ -22,6 +22,15 @@ unescaped `{{ }}` (see below) — can blank a block with a similar `SyntaxError`
 - **Reading the wrong shape** — use the `getQueryData` helper (`mappedData` || map `columns`+`data`);
   don't hardcode indices.
 
+## All pages vanished from the nav; console shows `l.pages is undefined` / `grid.layouts is undefined`
+**Cause:** one layout has a malformed grid (missing `json_data.grid.layouts.{lg,md,sm}`). The portal
+builds its page list by iterating every layout; one bad record throws and the **whole** list collapses,
+so *every* page disappears even though nothing was deleted.
+**Fix:** `list_resource layout` (full) and find the layout whose `json_data.grid.layouts` is missing;
+`update_resource` it with a valid grid (the structural gate will also auto-complete it). Version control
+auto-commits the repair, so it's revertible. As of **`[2.6.0]`** the write-gate prevents this shape from
+being written at all — see [15 · Structural Integrity Gate](15-structural-integrity.md).
+
 ## Binding disappeared after `update_block`
 **Cause:** `update_block` is full-replace; passing a new `ui_queries` (or `[]`) overwrites/clears it.
 **Fix:** **omit `ui_queries`** to preserve the existing binding; only pass it to intentionally rebind.
