@@ -232,6 +232,64 @@ in \`json_data\` (not freeform html). Shapes confirmed in the live v1.18 corpus:
   \`logo\` \`{ themeId, showNoLogoError }\`, \`page-share\` \`{}\`, plus \`tableau-dashboard\`, \`applied-filters\`.
 `;
 
+const VISUAL_VERIFICATION = `# Visual verification with Claude for Chrome
+
+The other guides describe a block from its CODE. This one is about SEEING it. With the Claude
+for Chrome extension connected, you can open the portal in the user's browser, screenshot a
+rendered block, and read its console/network — catching defects code review can't: a block that
+validates and binds correctly but renders BLANK, throws a runtime console error, overflows its
+grid cell, or silently shows the hardcoded SAMPLE fallback instead of live data. Use it for
+visual debugging and as the final visual gate (final approval).
+
+## When it applies
+- The preference is on: \`active_config\` reports \`config.browser.claudeInChrome: true\`.
+- The Chrome tools are actually connected (the \`mcp__claude-in-chrome__*\` tools resolve).
+- The block is on a VIEWABLE page (placed on a layout). A block on no page has no URL to open —
+  note that and fall back to code-only.
+
+If any of these is false, SKIP visual verification, say so explicitly, and review the code. Never
+block solely because you couldn't see it — this is a best-effort gate.
+
+## Sign-in caveat (important)
+The MCP authenticates to the portal with an API KEY; the browser needs a logged-in COOKIE session.
+You cannot log the user in. To view private pages the user must already be signed into their portal
+in Chrome. If navigation lands on a login screen, stop and tell them.
+
+## Load the tools first (one call)
+The Chrome tools are deferred — load the set you need in a SINGLE ToolSearch \`select:\` call, never
+one at a time:
+\`select:mcp__claude-in-chrome__tabs_context_mcp,mcp__claude-in-chrome__navigate,mcp__claude-in-chrome__computer,mcp__claude-in-chrome__read_page,mcp__claude-in-chrome__read_console_messages\`
+Add \`read_network_requests\` (failed data calls), \`javascript_tool\` (inspect currentBlock /
+queryResults live), \`resize_window\` (breakpoints), or \`gif_creator\` (record an approval) as needed.
+
+## Workflow
+1. \`tabs_context_mcp\` FIRST — if the portal is already open in a tab, reuse it; never reuse a tab id
+   from a previous session.
+2. Resolve the URL: portal base from \`active_config\` (\`portalUrl\`), page slug from the layout/page
+   record. Portal pages route as \`<base>/p/<slug>\`. When unsure of the slug, open the portal home and
+   navigate via its own nav.
+3. \`navigate\` to the page; let it load.
+4. \`computer\` screenshot — look at the block's grid cell.
+5. \`read_console_messages\` (filter with a pattern if noisy) for runtime errors.
+6. \`read_network_requests\` if data looks empty/wrong — did the query call 4xx/5xx or return 0 rows?
+7. \`resize_window\` to a phone width (e.g. 390px) and re-screenshot for the responsive pass.
+
+## The visual checklist
+- RENDERS — not a blank cell, not a spinner stuck forever.
+- LIVE data — the numbers match the bound query, NOT the hardcoded sample/fallback (cross-check one
+  value against \`execute_query\`). This is the #1 silent failure.
+- Console CLEAN — no uncaught errors, no \`$compile\`/SyntaxError, no failed library load.
+- No OVERFLOW/clipping in the grid cell; text truncates, charts fit, nothing spills.
+- Matches INTENT — right chart for the data, legible at the audience's altitude, theme tokens applied.
+
+## Cautions
+- Do NOT trigger \`alert\`/\`confirm\`/\`prompt\` or other modal dialogs — they freeze the extension. Use
+  \`console.log\` + \`read_console_messages\` instead.
+- Browsing/screenshotting is READ-ONLY on the portal — safe even for read-only agents.
+- If a tool errors or no browser is connected after a try or two, stop, fall back to code-only, and
+  report that visual verification was skipped (with the reason).
+`;
+
 export const GUIDES: Guide[] = [
   {
     uri: "zportal://guide/block-structure",
@@ -260,5 +318,12 @@ export const GUIDES: Guide[] = [
     title: "Charting libraries (ECharts / Chart.js / amCharts)",
     description: "Which charting library to use by complexity, and how to load each via zPortal.resources.load (incl. the amCharts 2-step core-then-modules load — no AMCHARTS_LOADER).",
     text: CHARTING,
+  },
+  {
+    uri: "zportal://guide/visual-verification",
+    name: "visual-verification",
+    title: "Visual verification with Claude for Chrome",
+    description: "How agents SEE a rendered block (screenshot, console, network) for visual debugging and the final visual gate — when it applies, the sign-in caveat, the workflow, and graceful code-only fallback.",
+    text: VISUAL_VERIFICATION,
   },
 ];

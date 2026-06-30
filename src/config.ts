@@ -38,6 +38,16 @@ export interface PortalConfig {
   userId: string;
 }
 
+// ── Browser-assist configuration ──────────────────────────────────────────────
+// Whether the operator has the Claude for Chrome extension available, so agents
+// may *see* the portal (screenshot a rendered block, read the console/network) for
+// visual debugging and a final visual sign-off — not just review the code. This is
+// a recorded PREFERENCE collected at setup; the live tools only exist if the client
+// also has the claude-in-chrome MCP connected, so agents degrade gracefully.
+export interface BrowserConfig {
+  claudeInChrome: boolean;
+}
+
 // ── Write-safety configuration ───────────────────────────────────────────────
 // Every write tool is tagged with a risk domain. Domains gate independently so
 // an operator can enable low-risk content edits while leaving SQL/admin off.
@@ -177,6 +187,7 @@ interface ConfigSource {
 
 let cachedProject: ConfigSource | null = null;
 let cachedBundle: ConfigSource | null = null;
+let cachedBrowser: BrowserConfig | null = null;
 let cachedGating: ToolGating | null = null;
 let cachedAudit: string | null | undefined = undefined; // undefined = not yet resolved
 
@@ -243,6 +254,7 @@ export function resetConfigCache(): void {
   cachedProject = null;
   cachedBundle = null;
   cachedVc = null;
+  cachedBrowser = null;
   cachedGating = null;
   cachedAudit = undefined;
   cachedNetwork = null;
@@ -255,7 +267,7 @@ export function projectConfigTarget(): string {
 
 // Pull a typed section ("portal" | "vc") out of a raw config object. Tolerates a
 // flat file where the portal fields live at the top level (legacy convenience).
-function section(raw: Record<string, unknown>, key: "portal" | "vc" | "tools"): Record<string, unknown> {
+function section(raw: Record<string, unknown>, key: "portal" | "vc" | "tools" | "browser"): Record<string, unknown> {
   const sub = raw[key];
   if (sub && typeof sub === "object" && !Array.isArray(sub)) return sub as Record<string, unknown>;
   if (key === "portal") return raw; // flat fallback: {url, apiKey, userId} at top level
@@ -454,6 +466,31 @@ export function loadVcConfig(): VcSettings {
 }
 
 /**
+ * Resolve the browser-assist preference with project > env > bundle precedence.
+ * Project files use a `browser` section: { "claudeInChrome": true }. An explicit
+ * project value (true OR false) is authoritative; otherwise the env flag
+ * PORTAL_CLAUDE_IN_CHROME (when set) decides; otherwise the bundle; default off.
+ * This is a stored PREFERENCE only — it never makes the Chrome tools exist; agents
+ * still detect and degrade if the claude-in-chrome MCP isn't connected.
+ */
+export function loadBrowserConfig(): BrowserConfig {
+  if (cachedBrowser !== null) return cachedBrowser;
+  const proj = section(discoverProjectConfig().raw, "browser");
+  const bundle = section(discoverBundleConfig().raw, "browser");
+  const envSet = envStr("PORTAL_CLAUDE_IN_CHROME") !== undefined;
+  const claudeInChrome =
+    typeof proj.claudeInChrome === "boolean"
+      ? proj.claudeInChrome
+      : envSet
+        ? envOn("PORTAL_CLAUDE_IN_CHROME")
+        : typeof bundle.claudeInChrome === "boolean"
+          ? bundle.claudeInChrome
+          : false;
+  cachedBrowser = { claudeInChrome };
+  return cachedBrowser;
+}
+
+/**
  * Resolve and validate portal credentials with project > env > bundle precedence.
  * Throws an actionable error if any of url / apiKey / userId is missing.
  */
@@ -510,6 +547,7 @@ export function activeConfigInfo(): {
   userId: string | null;
   apiKeyConfigured: boolean;
   vc: ReturnType<typeof vcInfo>;
+  browser: ReturnType<typeof browserInfo>;
 } {
   const project = discoverProjectConfig();
   const bundle = discoverBundleConfig();
@@ -531,7 +569,13 @@ export function activeConfigInfo(): {
     userId,
     apiKeyConfigured,
     vc: vcInfo(),
+    browser: browserInfo(),
   };
+}
+
+/** The browser-assist preference, for activeConfigInfo / get_capabilities. */
+function browserInfo(): { claudeInChrome: boolean } {
+  return { claudeInChrome: loadBrowserConfig().claudeInChrome };
 }
 
 function vcInfo(): {

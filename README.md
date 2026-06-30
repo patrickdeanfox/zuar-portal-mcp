@@ -178,17 +178,28 @@ Blocks are **never shipped raw**. A spec flows through quality gates, each a foc
 ```mermaid
 flowchart LR
     spec([spec]) --> B["🏗️ builder"] --> St["🎨 stylist"] --> R["📱 responsive"] --> D["🔧 debugger"]
-    D --> A{"🚨 adversary<br/><b>GATE</b>"}
+    D --> A{"🚨 adversary<br/><b>CODE GATE</b>"}
     A -- "blocking (≤2 rounds)" --> D
-    A -- "clean" --> Ad["🧭 advisor"] --> ship([ship ✅])
+    A -- "clean" --> V{"👁️ visual<br/><b>GATE</b>"}
+    V -- "blocking (≤2 rounds)" --> D
+    V -- "clean / skipped" --> Ad["🧭 advisor"] --> ship([ship ✅])
 
     classDef gate fill:#fde68a,stroke:#b45309,color:#000;
     classDef ro fill:#dbeafe,stroke:#1d4ed8,color:#000;
-    class A gate
+    class A,V gate
     class Ad ro
 ```
 
-The **adversary** (gate) red-teams the block and proves each finding with evidence; while it returns blocking findings the pipeline loops back to the **debugger**. The **advisor** asks "is this the *right* block?" Both are **read-only** — they carry no write tools and physically cannot mutate the portal. Beyond the six pipeline agents, four **specialists** handle broader jobs: `portal-data-expert`, `portal-theme-designer`, `portal-bulk-operator` (snapshot-first), and `portal-onboarding`.
+The **adversary** (gate) red-teams the block and proves each finding with evidence; while it returns blocking findings the pipeline loops back to the **debugger**. The **visual gate** (the adversary with browser eyes) then *opens the rendered block in Claude for Chrome* — screenshot, console, network — and a blank render, console error, sample-not-live data, or overflow loops back to the debugger too; it's **best-effort** and skips with a note when the extension isn't connected or the block isn't on a page. The **advisor** asks "is this the *right* block?" All gates are **read-only** — they carry no write tools and physically cannot mutate the portal (browsing/screenshotting is read-only). Beyond the six pipeline agents, four **specialists** handle broader jobs: `portal-data-expert`, `portal-theme-designer`, `portal-bulk-operator` (snapshot-first), and `portal-onboarding`.
+
+### Seeing the portal (Claude for Chrome)
+
+Every gate above reasons about a block from its **code and query rows** — but a block can validate, bind, and still render blank, throw a runtime console error, overflow its grid cell, or silently show its hardcoded **sample** fallback instead of live data. With the **[Claude for Chrome](https://www.anthropic.com/claude-in-chrome)** extension connected, the agents can *see* the portal: open the page, screenshot the block, and read the browser console/network — for **visual debugging** and a final **visual sign-off**.
+
+- **Recorded at setup.** `setup_portal` asks whether you use Claude for Chrome and stores `browser.claudeInChrome` in `./.zuar-portal/config.json`; `active_config` / `get_capabilities` report it.
+- **Used where it pays.** The debugger looks before it guesses; the adversary owns the **visual gate**; the stylist and responsive-specialist screenshot their work (the latter steps widths with `resize_window`); the advisor checks it reads at a glance.
+- **Sign-in caveat.** The MCP authenticates with an **API key**, but the browser needs a **logged-in session** — to view private pages you must be **signed into your portal in Chrome**. The MCP can't log you in.
+- **Graceful by design.** No extension, or the block isn't on a page? Every agent falls back to code-only review and says so. The doctrine lives in the `zportal://guide/visual-verification` resource.
 
 ### Slash commands
 
@@ -236,7 +247,8 @@ flowchart TB
     subgraph setup["🔌 setup_portal — connect a portal"]
         direction TB
         s1["Portal URL"] --> s2["API key 🔒"] --> s3["User ID"] --> s4{"add GitHub VC?<br/>(optional)"}
-        s4 --> s5["✓ live portal login<br/>✓ GitHub token + repo (API)"] --> s6[["writes .zuar-portal/config.json<br/>+ .gitignore"]]
+        s4 --> s4b{"use Claude for Chrome?<br/>👁️ visual checks"}
+        s4b --> s5["✓ live portal login<br/>✓ GitHub token + repo (API)"] --> s6[["writes .zuar-portal/config.json<br/>+ .gitignore"]]
     end
     subgraph intake["🎨 design_intake — theme the portal"]
         direction TB
@@ -245,7 +257,7 @@ flowchart TB
     end
 ```
 
-- **`setup_portal`** refuses to clobber an existing config, validates with a real login, and writes a gitignored `./.zuar-portal/`. The `setup_zuar_project` prompt and `/portal-setup` route to it; `init_project_config` is the direct, no-prompt equivalent.
+- **`setup_portal`** refuses to clobber an existing config, validates with a real login, and writes a gitignored `./.zuar-portal/`. It also asks whether you use **Claude for Chrome** (stored as `browser.claudeInChrome`) so the build pipeline can *see* your blocks render — visual debugging + a final visual gate (see [Seeing the portal](#seeing-the-portal-claude-for-chrome)). The `setup_zuar_project` prompt and `/portal-setup` route to it; `init_project_config` is the direct, no-prompt equivalent.
 - **`design_intake`** fetches the brand's website through an **SSRF-guarded** fetch to suggest a palette, then walks density/radius/header/sidebar and, on your confirmation, creates a `theme` resource.
 
 ---

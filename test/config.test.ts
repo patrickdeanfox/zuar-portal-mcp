@@ -18,6 +18,8 @@ import {
   loadToolGating,
   toolEnabled,
   resetConfigCache,
+  loadBrowserConfig,
+  activeConfigInfo,
 } from "../src/config.js";
 
 // Clear any inherited safety flags BEFORE the first loadSafetyConfig() call so the
@@ -89,4 +91,32 @@ test("tool-level gating works independent of group", () => {
 
   assert.equal(toolEnabled("delete_block", "blocks"), false, "single tool denied by name");
   assert.equal(toolEnabled("create_block", "blocks"), true, "sibling in same group still on");
+});
+
+// ── Browser-assist preference (Claude for Chrome) ────────────────────────────
+test("browser-assist preference: default off", () => {
+  delete process.env.PORTAL_CLAUDE_IN_CHROME;
+  resetConfigCache();
+  assert.equal(loadBrowserConfig().claudeInChrome, false, "default is off (no project/env opt-in)");
+});
+
+test("browser-assist preference: PORTAL_CLAUDE_IN_CHROME=1 turns it on", () => {
+  process.env.PORTAL_CLAUDE_IN_CHROME = "1";
+  resetConfigCache();
+  assert.equal(loadBrowserConfig().claudeInChrome, true, "env flag opts in");
+
+  process.env.PORTAL_CLAUDE_IN_CHROME = "off";
+  resetConfigCache();
+  assert.equal(loadBrowserConfig().claudeInChrome, false, "a non-truthy value is off");
+
+  delete process.env.PORTAL_CLAUDE_IN_CHROME;
+  resetConfigCache();
+});
+
+test("activeConfigInfo includes the browser preference", () => {
+  delete process.env.PORTAL_CLAUDE_IN_CHROME;
+  resetConfigCache();
+  const info = activeConfigInfo();
+  assert.ok(info.browser, "activeConfigInfo exposes a browser section");
+  assert.equal(typeof info.browser.claudeInChrome, "boolean");
 });

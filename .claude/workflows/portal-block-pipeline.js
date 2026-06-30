@@ -1,21 +1,28 @@
 export const meta = {
   name: 'portal-block-pipeline',
-  description: 'Build one Zuar Portal block through the full quality pipeline: build → style → responsive → debug → adversary (gate, loops) → advisor.',
+  description: 'Build one Zuar Portal block through the full quality pipeline: build → style → responsive → debug → adversary (gate, loops) → visual (gate, loops) → advisor.',
   phases: [
     { title: 'Build', detail: 'discover data, author + bind the block, validate, create' },
     { title: 'Style', detail: 'apply the house design system' },
     { title: 'Responsive', detail: 'breakpoints, mobile, no overflow' },
     { title: 'Debug', detail: 'fix runtime footguns, verify live data' },
     { title: 'Adversary', detail: 'read-only red team gate (loops back to debug while blocking)' },
+    { title: 'Visual', detail: 'open the rendered block in Claude for Chrome — visual gate, best-effort, loops back to debug' },
     { title: 'Advise', detail: 'business / data / UX alignment' },
   ],
 }
 
 // --- input ---------------------------------------------------------------
 // Pass the spec via Workflow `args`: either a plain string, or
-// { spec, page_id, tier }. tier ∈ 'fast' | 'standard' | 'max' (default 'standard').
+// { spec, page_id, tier, portal_url, visual }. tier ∈ 'fast' | 'standard' | 'max' (default 'standard').
+// The Visual gate runs only when the block is placed on a page (page_id) AND visual !== false;
+// pass portal_url so the agent can resolve the page URL without a round-trip. It is best-effort:
+// when the Claude for Chrome extension isn't connected (or the page isn't viewable) it skips with a note.
 const spec = typeof args === 'string' ? args : (args && args.spec) || ''
 const pageId = args && typeof args === 'object' ? args.page_id : undefined
+const portalUrl = args && typeof args === 'object' ? args.portal_url : undefined
+const wantVisual = !(args && typeof args === 'object' && args.visual === false)
+const doVisual = Boolean(pageId) && wantVisual
 if (!spec) {
   log('No block spec provided in args. Pass args: "<what the block should show>" or { spec, page_id, tier }.')
 }
@@ -36,6 +43,7 @@ const ROUTING = {
     responsive: { model: 'haiku',  effort: 'low' },
     debug:      { model: 'sonnet', effort: 'low' },
     adversary:  { model: 'sonnet', effort: 'medium' },
+    visual:     { model: 'sonnet', effort: 'medium' },
     advisor:    { model: 'sonnet', effort: 'medium' },
   },
   standard: {
@@ -44,6 +52,7 @@ const ROUTING = {
     responsive: { model: 'haiku',  effort: 'low' },
     debug:      { model: 'sonnet', effort: 'medium' },
     adversary:  { model: 'opus',   effort: 'high' },
+    visual:     { model: 'opus',   effort: 'high' },
     advisor:    { model: 'opus',   effort: 'high' },
   },
   max: {
@@ -52,6 +61,7 @@ const ROUTING = {
     responsive: { model: 'sonnet', effort: 'low' },
     debug:      { model: 'opus',   effort: 'high' },
     adversary:  { model: 'opus',   effort: 'xhigh' },
+    visual:     { model: 'opus',   effort: 'xhigh' },
     advisor:    { model: 'opus',   effort: 'xhigh' },
   },
 }
@@ -94,6 +104,32 @@ const ADVERSARY = {
   properties: {
     verdict: { type: 'string', enum: ['ship', 'needs-fixes'] },
     blocking_count: { type: 'integer' },
+    findings: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          severity: { type: 'string', enum: ['blocking', 'major', 'minor', 'nit'] },
+          issue: { type: 'string' },
+          evidence: { type: 'string' },
+          blocking: { type: 'boolean' },
+          suggested_fix: { type: 'string' },
+        },
+      },
+    },
+  },
+}
+const VISUAL = {
+  type: 'object',
+  required: ['verdict', 'blocking_count', 'findings'],
+  properties: {
+    verdict: { type: 'string', enum: ['ship', 'needs-fixes'] },
+    blocking_count: { type: 'integer' },
+    skipped: { type: 'boolean', description: 'true when the block could not be viewed (extension off / not on a page / login screen)' },
+    rendered: { type: ['boolean', 'null'] },
+    live_data: { type: ['boolean', 'null'], description: 'shows live query data, not the hardcoded sample fallback' },
+    console_clean: { type: ['boolean', 'null'] },
+    no_overflow: { type: ['boolean', 'null'] },
     findings: {
       type: 'array',
       items: {
@@ -185,6 +221,49 @@ while (adversary && adversary.verdict === 'needs-fixes' && adversary.blocking_co
   )
 }
 
+// Visual gate — open the rendered block and SEE it. Runs only when the block is on a page
+// (it needs a URL) and visual isn't disabled. Best-effort: the adversary (now eyes-equipped)
+// returns verdict:'ship' with skipped:true when the extension isn't connected or the page
+// isn't viewable, so it never hard-blocks. A blocking visual failure loops back to the debugger.
+let visual = null
+if (doVisual) {
+  phase('Visual')
+  const visualPrompt =
+    `VISUAL gate for block ${blockId} (read-only) — the block is placed on page ${pageId}. Read ` +
+    `zportal://guide/visual-verification first, then open the live portal in Claude for Chrome and SEE it ` +
+    `render: ${portalUrl ? `portal base ${portalUrl}; ` : ''}resolve the page URL (active_config for the base, ` +
+    `the layout/page slug; pages route as <base>/p/<slug>), navigate, screenshot the block's grid cell, read the ` +
+    `console, and read the network if data looks empty. Confirm it RENDERS, shows LIVE data (not the hardcoded ` +
+    `sample — cross-check one value with execute_query), the console is CLEAN, and nothing OVERFLOWS. If the ` +
+    `Chrome tools aren't connected or the page isn't viewable (e.g. a login screen), DO NOT fail: return ` +
+    `verdict:'ship' with skipped:true and a finding noting why. Otherwise a clear visual failure is a blocking ` +
+    `finding. Return rendered/live_data/console_clean/no_overflow, findings (severity+evidence+blocking), ` +
+    `blocking_count, and a verdict.`
+  visual = await agent(visualPrompt, { agentType: 'portal-block-adversary', ...R.visual, schema: VISUAL, label: 'visual', phase: 'Visual' })
+  if (visual && visual.skipped) {
+    log('Visual gate skipped (block not viewable / extension not connected) — code-only gates stand.')
+  }
+
+  // Loop: a blocking VISUAL failure goes back to the debugger (who can also reproduce visually).
+  let vround = 0
+  while (visual && visual.verdict === 'needs-fixes' && visual.blocking_count > 0 && !visual.skipped && vround < 2) {
+    vround++
+    const vblockers = (visual.findings || []).filter((f) => f.blocking)
+    log(`Visual gate flagged ${visual.blocking_count} blocking issue(s) — fix round ${vround}.`)
+    debug = await agent(
+      `Fix ONLY these VISUAL blocking findings on block ${blockId} (it renders on page ${pageId}); reproduce with ` +
+        `Claude for Chrome if available, fix minimally, re-validate, and update preserving ui_queries: ` +
+        JSON.stringify(vblockers),
+      { agentType: 'portal-block-debugger', ...R.debug, schema: STAGE, label: `visual-fix-r${vround}`, phase: 'Debug' }
+    )
+    visual = await agent(
+      `Re-run the VISUAL gate for block ${blockId} after the round-${vround} fixes: re-navigate, re-screenshot, ` +
+        `re-read the console; confirm the previously-blocking visual issues are resolved. Same skip-don't-fail rule.`,
+      { agentType: 'portal-block-adversary', ...R.visual, schema: VISUAL, label: `visual-r${vround}`, phase: 'Visual' }
+    )
+  }
+}
+
 phase('Advise')
 const advisor = await agent(
   `Advise on block ${blockId} (read-only): does it answer the business question, is the metric/SQL correct, is the ` +
@@ -201,6 +280,10 @@ return {
   fix_rounds: round,
   adversary_verdict: adversary && adversary.verdict,
   open_blocking: adversary && adversary.blocking_count,
+  visual_ran: doVisual,
+  visual_verdict: visual && visual.verdict,
+  visual_skipped: visual ? Boolean(visual.skipped) : null,
+  visual_findings: visual && visual.findings,
   advisor,
   build,
 }

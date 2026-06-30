@@ -112,6 +112,12 @@ const SERVER_INSTRUCTIONS = [
   "and run validate_block before create_block/update_block. Never put a literal `$` next to a quote or",
   "digit (it blanks the block) — format currency with toLocaleString.",
   "",
+  "Seeing the portal: when active_config reports config.browser.claudeInChrome and the Claude for Chrome",
+  "tools are connected, agents can OPEN the portal and visually verify a block (screenshot the render,",
+  "read the console/network) — the visual gate for final approval and visual debugging. Read",
+  "zportal://guide/visual-verification for the workflow; it degrades to code-only review when the",
+  "extension isn't present. Viewing private pages needs the user signed into the portal in Chrome.",
+  "",
   "Write safety: content writes (blocks/pages/queries/themes) are ON by default; data (SQL) and admin",
   "(users/security) writes are OPT-IN env flags and are reported by get_capabilities. Destructive tools",
   "(deletes, user-membership replacement, db modifications) require confirm:true. When a write is",
@@ -2454,6 +2460,13 @@ function registerConfigTools(server: McpServer): void {
         vc_token: z.string().optional().describe("GitHub PAT for HTTPS push (stored locally, never logged)."),
         vc_username: z.string().optional().describe("HTTPS username for the token (default x-access-token)."),
         vc_push: z.boolean().optional().describe("Push after each commit (default true when a remote is set)."),
+        claude_in_chrome: z
+          .boolean()
+          .optional()
+          .describe(
+            "Record whether the Claude for Chrome extension is available, so agents may visually verify " +
+              "blocks (screenshot the render, read the console) instead of only reviewing code. Skips the prompt."
+          ),
         overwrite: z.boolean().optional().describe("Overwrite an existing project config (default false)."),
         validate: z.boolean().optional().describe("Validate portal creds with a live login (default true)."),
         validate_github: z.boolean().optional().describe("Validate the GitHub token/repo via the API (default true)."),
@@ -2607,10 +2620,32 @@ function registerConfigTools(server: McpServer): void {
           github = { ok: v.ok, checked: v.checked, login: v.login, repo: v.repoFullName, can_push: v.canPush, note: v.reason };
         }
 
+        // ── Browser assist (Claude for Chrome) preference ───────────────────
+        // Optional enhancement: lets agents SEE the portal (screenshot a rendered block,
+        // read the console/network) for visual debugging + a final visual sign-off. A
+        // decline/cancel here never aborts setup. (Caveat surfaced in the prompt: the
+        // browser needs the user signed into the portal — the MCP's API key doesn't
+        // authenticate the Chrome session.)
+        let claudeInChrome: boolean;
+        if (typeof args.claude_in_chrome === "boolean") {
+          claudeInChrome = args.claude_in_chrome;
+        } else if (canElicit) {
+          const r = await elicitForm(
+            "Do you use the Claude for Chrome extension? With it I can open your portal and *see* each block " +
+              "render with live data, read the browser console/network to debug visually, and give a final " +
+              "visual sign-off — not just review the code. (You'll need to be signed into your portal in Chrome " +
+              "so I can view private pages.)",
+            { claude_in_chrome: { type: "boolean", title: "Use Claude for Chrome for visual checks?" } },
+            ["claude_in_chrome"]
+          );
+          claudeInChrome = r.status === "accept" && r.content.claude_in_chrome === true;
+        } else claudeInChrome = false;
+
         // ── Build + write the project config ────────────────────────────────
         const config: Record<string, unknown> = {
           portal: { url: portalUrl!.replace(/\/$/, ""), apiKey, userId },
         };
+        if (claudeInChrome) config.browser = { claudeInChrome: true };
         if (doGithub && vcDir) {
           const vc: Record<string, unknown> = { dir: vcDir };
           vc.push = vcPush === undefined ? Boolean(vcRemote) : vcPush;
@@ -2635,8 +2670,11 @@ function registerConfigTools(server: McpServer): void {
           written: target,
           gitignore: ignore,
           vc_configured: Boolean(config.vc),
+          claude_in_chrome: claudeInChrome,
           github,
-          note: "Secrets stored locally and gitignored; not echoed here.",
+          note: claudeInChrome
+            ? "Secrets stored locally and gitignored; not echoed here. Visual checks need you signed into the portal in Chrome."
+            : "Secrets stored locally and gitignored; not echoed here.",
         };
         if (args.validate !== false) {
           try {
