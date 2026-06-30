@@ -16,12 +16,26 @@ and a gated pipeline of subagents builds, styles, hardens, and reviews it for yo
 Blocks are **never shipped raw**. A spec flows through quality gates, each one a specialist agent that
 does one job and hands off to the next:
 
+```mermaid
+flowchart LR
+    spec([spec]) --> B["🏗️ builder<br/><i>build</i>"]
+    B --> S["🎨 stylist<br/><i>polish</i>"]
+    S --> R["📱 responsive<br/><i>mobile</i>"]
+    R --> D["🔧 debugger<br/><i>fix bugs</i>"]
+    D --> A{"🚨 adversary<br/><b>GATE: break it</b>"}
+    A -- "blocking findings<br/>(≤ 2 rounds)" --> D
+    A -- "clean" --> V["🧭 advisor<br/><i>align</i>"]
+    V --> ship([ship ✅])
+
+    classDef gate fill:#fde68a,stroke:#b45309,color:#000;
+    classDef readonly fill:#dbeafe,stroke:#1d4ed8,color:#000;
+    class A gate
+    class V readonly
 ```
-spec → builder → stylist → responsive → debugger → adversary → advisor → ship
-        (build)  (polish)  (mobile)    (fix bugs)  (GATE: break it) (align)
-                                            ▲___________│
-                                         loop back while blocking
-```
+
+*The **adversary** and **advisor** (blue) are read-only — they carry no write tools and physically cannot
+mutate the portal. The adversary (amber) is the **gate**: while it returns blocking findings, the pipeline
+loops back to the debugger, bounded to two rounds.*
 
 - **builder** discovers the datasource, verifies the real columns, authors the two-field block, binds it
   via `ui_queries`, validates, and creates it — correct and on real data.
@@ -94,11 +108,49 @@ capability (and referenced by the commands). They fan agents out and synthesize 
 - **`portal-block-pipeline.js`** — a hands-off gated build of one block. It runs the stages in sequence
   (they all mutate one block, so never in parallel), then **loops the adversary↔debugger** while the gate
   returns blocking findings (bounded to two rounds), and ends with the advisor. Returns the `block_id`,
-  bound query, fix-round count, and the adversary/advisor verdicts.
+  bound query, fix-round count, the chosen `tier`, and the adversary/advisor verdicts.
 - **`portal-audit.js`** — fans the **adversary + advisor across every block in parallel** (capped, with an
   optional name filter), flattens and severity-ranks the findings (blocking first), and asks an agent to
   write a ranked report. The report's blocking/major items map to block ids and suggested fixes you can
   feed straight into `/portal-build`'s debugger stage.
+
+Both accept a **`tier`** in `args` (`fast` \| `standard` \| `max`) to dial cost vs. quality across the
+whole run — see [Model & effort routing](#model--effort-routing) below.
+
+## Model & effort routing
+
+Each agent runs on the **model and reasoning effort** that fit its job — sharp where judgment matters,
+cheap where the work is mechanical. Routing has three composing layers.
+
+**1 · Agent defaults** (`model:` / `effort:` in each agent's frontmatter) — the model for a *direct* call
+(a quick surgical edit, or one agent dispatched from a command):
+
+| Tier | Agents | Model · effort |
+|------|--------|----------------|
+| 🧠 **Judgment / data** | `portal-data-expert`, `portal-block-adversary`, `portal-block-advisor` | **`opus` · high** |
+| 🛠️ **Authoring** | `portal-block-builder`, `portal-block-stylist`, `portal-block-debugger`, `portal-bulk-operator`, `portal-theme-designer`, `portal-onboarding` | **`sonnet` · medium** |
+| ⚡ **Mechanical** | `portal-responsive-specialist` | **`haiku` · low** |
+
+**2 · Workflow `tier` toggle** — `portal-block-pipeline.js` and `portal-audit.js` accept
+`args:{ …, tier }` (`fast` \| `standard` \| `max`, default `standard`) and set **each stage's** model/effort
+*explicitly*, so the routing holds regardless of the session model:
+
+| `tier` | Reach for it when… | Builders | Judgment gates |
+|--------|--------------------|----------|----------------|
+| **`fast`** | cheap iteration, throwaway drafts, large-set triage | `sonnet`/`haiku` · low | `sonnet` · medium |
+| **`standard`** *(default)* | a normal build / audit | `sonnet` · medium | **`opus` · high** |
+| **`max`** | production / executive build, pre-release audit | **`opus` · high** | **`opus` · xhigh** |
+
+**3 · Command orchestration** — the six `/portal-*` commands pin to **`sonnet` · medium**. They only
+orchestrate (pre-flight → dispatch → synthesize); the quality lives in the agents and workflow stages they
+call. `/portal-build` and `/portal-audit` infer the workflow `tier` from how you phrase the request
+("rough sketch" → `fast`, "make it production-grade" → `max`).
+
+> **Re-tiering.** Change `model:`/`effort:` in an agent's frontmatter (its single-shot default) or the
+> `ROUTING` table at the top of a workflow (per-stage). Valid models: `opus`, `sonnet`, `haiku`, `fable`,
+> or a full model id; effort: `low | medium | high | xhigh | max`. The MCP **server** never selects a
+> model — only the agents, commands, and workflows that drive it do. See
+> [`.claude/README.md`](../.claude/README.md) for the authoritative table.
 
 ## Automation & loops
 

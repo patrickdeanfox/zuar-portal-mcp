@@ -5,16 +5,18 @@ end to end: author HTML blocks, build pages, manage datasources/queries/themes/u
 and (new in 2.2.0) keep a git-versioned, revertible history of every content change — all through
 natural language.
 
-> **Versions:** these docs describe the MCP server at **v2.7.0** (current on `main`), targeting a
+> **Versions:** these docs describe the MCP server at **v2.8.0** (current on `main`), targeting a
 > **Zuar Portal 1.19** instance (the in-block data API is the stable "v1.18+" shape). Feature flags
-> like **`[2.2.0]`** / **`[2.5.0]`** mark the release a surface landed in. New tools/rules/version-control
-> take effect in your **running** server only after `npm run build` + `.mcpb` repack + MCP restart.
+> like **`[2.2.0]`** / **`[2.5.0]`** / **`[2.8.0]`** mark the release a surface landed in. New
+> tools/rules/version-control take effect in your **running** server only after `npm run build` +
+> `.mcpb` repack + MCP restart.
 
 ## Start here
 - **New to the server?** → [01 · Overview](01-overview.md)
 - **Setting it up?** → [02 · Install & Configuration](02-install-and-config.md)
 - **Want the full tool list?** → [03 · Tools Reference](03-tools-reference.md)
-- **Driving it from Claude Code?** → [13 · Agents & Workflows](13-agents-and-workflows.md)
+- **Guided, no-JSON setup or theming?** → `setup_portal` & `design_intake` ([elicitation](02-install-and-config.md) — prompt-driven, validated, no hand-edited config)
+- **Driving it from Claude Code?** → [13 · Agents & Workflows](13-agents-and-workflows.md) (the subagent pipeline + **model/effort routing**)
 
 ## Documentation map
 

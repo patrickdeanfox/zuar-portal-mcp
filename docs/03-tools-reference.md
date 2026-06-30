@@ -1,6 +1,6 @@
 # 03 · Tools Reference
 
-All 40 tools, grouped by purpose. Each is tagged with its **risk domain** — see
+All 44 tools, grouped by purpose. Each is tagged with its **risk domain** — see
 [02 · write-safety domains](02-install-and-config.md#write-safety-domains-important).
 
 **Domain legend:** 🟢 read (always available) · 🔵 content (on by default) · 🟠 data

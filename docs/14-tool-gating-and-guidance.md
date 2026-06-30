@@ -14,7 +14,7 @@ calls exist, how they're explained, and what gets recorded.
 The defaults assume a builder driving a portal they own. Enterprise deployments often want the opposite:
 **least privilege** (an analyst-facing server that can build blocks but can never touch users or portal
 config) and **guided usage** (so an operator — or an agent — orients before acting instead of guessing
-at 40 tools). v2.5.0 adds three independent levers for that:
+at 44 tools). v2.5.0 adds three independent levers for that:
 
 - **Tool gating** — freeze the tool surface to a chosen subset of capability groups.
 - **Guided usage** — server `instructions`, a `get_capabilities` tool, and a `zuar_portal_quickstart`
@@ -35,9 +35,9 @@ reports them as off.
 
 | Group | Tools | Notes |
 |-------|-------|-------|
-| `discovery` | `get_version`, `get_rules`, `describe_resource`, `get_me` | Read-only introspection. |
+| `discovery` | `get_version`, `get_rules`, `describe_resource`, `get_me`, `suggest_name`, `parse_name` | Read-only introspection + the naming grammar. |
 | `blocks` | `list_blocks`, `get_block`, `validate_block`, `create_block`, `update_block`, `delete_block`, `bind_block_query`, `add_block_to_page`, `remove_block_from_page`, `set_page_blocks` | Typed HTML authoring + page placement. |
-| `resources` | `list_resource`, `get_resource`, `create_resource`, `update_resource`, `delete_resource` | Generic CRUD over every other resource. |
+| `resources` | `list_resource`, `get_resource`, `create_resource`, `update_resource`, `delete_resource`, `validate_portal` | Generic CRUD over every other resource + the read-only integrity sweep. |
 | `data` | `fetch_sample_rows`, `profile_datasource`, `execute_query`, `run_db_modification` | SQL / datasources / db modifications. |
 | `users` | `get_user_groups`, `set_user_groups`, `get_user_permissions`, `set_user_permissions`, `change_password`, `update_me` | Users / groups / permissions / passwords. |
 | `config` | `get_config`, `update_config` | The portal configuration document. |
@@ -45,9 +45,10 @@ reports them as off.
 | `setup` | `active_config`, `init_project_config`, `setup_portal` | Per-project credential bootstrap (`setup_portal` is the elicitation-guided variant). |
 | `design` | `design_intake` | Guided theming — elicit design prefs, synthesize + create a `theme`. |
 
-**`get_capabilities` is always-on** (its own `meta` group) and **`active_config` stays available** even
-when the `setup` group is gated off — so an operator can always *see* the posture and *fix* the
-configuration. (You can still kill either by naming it explicitly in a denylist — see below.)
+**`get_capabilities` and `get_metrics` are always-on** (their own `meta` group) and **`active_config`
+stays available** even when the `setup` group is gated off — so an operator can always *see* the posture,
+read the metrics, and *fix* the configuration. (You can still kill any of them by naming it explicitly in
+a denylist — see below.)
 
 ### Denylist vs allowlist
 
