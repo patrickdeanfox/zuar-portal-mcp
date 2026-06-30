@@ -25,6 +25,31 @@ and **`safety.ts`** (is this operation *safe given the rest of the portal*?). Th
 `safety.ts` functions are pure (the data lookups are injected), so they're unit
 tested with no network — see `test/safety.test.ts` and `test/structure.test.ts`.
 
+Every write runs the gauntlet at one chokepoint — repaired where possible, refused where not, before anything reaches the portal:
+
+```mermaid
+flowchart TB
+    W["content / data / admin write"] --> D0{"domain enabled?"}
+    D0 -- "no" --> X1["❌ refuse — name the flag"]
+    D0 -- "yes" --> G1{"① structure<br/>shape fits renderer?"}
+    G1 -- "repairable" --> FIX["fill safe defaults"] --> G2
+    G1 -- "no" --> X2["❌ reject"]
+    G1 -- "yes" --> G2{"② referential<br/>refs resolve?"}
+    G2 -- "no (error)" --> X3["❌ reject — name missing ref"]
+    G2 -- "yes" --> G3{"③ impact<br/>(delete) orphans dependents?"}
+    G3 -- "yes & no force" --> X4["❌ refuse — list dependents"]
+    G3 -- "no / force" --> G4{"④ data blast<br/>(SQL) unscoped mass write?"}
+    G4 -- "yes & no allow_unfiltered" --> X5["❌ refuse"]
+    G4 -- "no / allowed" --> G5{"⑤ admin lockout<br/>(user) last admin / self?"}
+    G5 -- "yes" --> X6["❌ refuse"]
+    G5 -- "no" --> OK["✅ write to portal + VC commit"]
+
+    classDef bad fill:#fee2e2,stroke:#b91c1c,color:#000;
+    classDef good fill:#dcfce7,stroke:#15803d,color:#000;
+    class X1,X2,X3,X4,X5,X6 bad
+    class OK good
+```
+
 ## 1 · Structure (auto-repair, then hard-reject)
 
 Covered in depth in [doc 15](15-structural-integrity.md). Contracts exist for

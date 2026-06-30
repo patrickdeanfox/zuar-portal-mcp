@@ -62,6 +62,23 @@ A block has **no `data` field**. It binds via `ui_queries`:
 
 Fastest path: `bind_block_query` with a `datasource_id` auto-creates a `SELECT *` query and links it.
 
+### The data path at a glance
+
+A block **binds** down to a datasource and **reads** the rows back synchronously — a native filter re-runs the query and refreshes every bound block:
+
+```mermaid
+flowchart LR
+    block["🧱 HTML block"] --> UQ["ui_queries[n]<br/>query_id · page_size:null"]
+    UQ --> Q["📄 query (saved SQL)"]
+    Q --> DS[("🗄️ datasource")]
+    Q ==> QR["currentBlock.queryResults[n]<br/>.columns · .data · .mappedData"]
+    QR --> H["getQueryData(n)<br/>map by name → [{col: value}]"]
+    H --> R["render"]
+    FILT["🔎 native filter<br/>setFilters(col, [vals])"] -. "re-query + on('load')" .-> Q
+```
+
+*Solid = binding/resolution; the thick arrow is the data coming back. Map columns **by name**, never by index — a column-name mismatch is the #1 cause of an empty block.*
+
 ## The reliable build flow
 1. **Discover** — `list_resource datasource` / `query`; `fetch_sample_rows` or `execute_query` to see
    **real column names** and values.

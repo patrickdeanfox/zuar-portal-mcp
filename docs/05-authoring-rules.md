@@ -10,6 +10,20 @@ API call. Each rule has a configurable severity:
 Read the active config anytime with **`get_rules`** (returns severities + the full conventions text,
 also exposed as the `zportal://guide/conventions` resource).
 
+```mermaid
+flowchart LR
+    P["create_block / update_block payload"] --> V["validateBlock (rules.ts)"]
+    V --> E{"any error-severity<br/>violation?"}
+    E -- "yes" --> REJ["❌ hard-reject — no API call<br/>fix, then retry"]
+    E -- "no" --> API["✅ API call to portal"]
+    API --> W["return result + any warn notes"]
+
+    classDef bad fill:#fee2e2,stroke:#b91c1c,color:#000;
+    classDef good fill:#dcfce7,stroke:#15803d,color:#000;
+    class REJ bad
+    class API good
+```
+
 ## The rules
 
 | Rule | Default | Catches / requires |

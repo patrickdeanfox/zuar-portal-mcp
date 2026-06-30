@@ -29,6 +29,20 @@ const DS_ID = currentBlock.queryResults?.[0]?.__source__ || (zPortal.dataSource.
 
 ## `zPortal.dataSource` — native, cross-block filters
 Setting a filter re-queries the datasource and refreshes **every** block bound to it.
+
+```mermaid
+sequenceDiagram
+    participant F as 🔎 Filter control
+    participant DS as zPortal.dataSource
+    participant P as Portal datasource
+    participant B as Every bound block
+    F->>DS: setFilters('region', ['West'])
+    DS->>P: re-query with the active filters
+    P-->>DS: fresh rows
+    DS-->>B: 'load' event fires
+    B->>B: getQueryData() → re-render
+```
+
 ```js
 zPortal.dataSource.setFilters('region', ['West', 'East']);   // set + refresh; [] clears that column
 zPortal.dataSource.setRangeFilters('amount', { min: 0, max: 1000 });

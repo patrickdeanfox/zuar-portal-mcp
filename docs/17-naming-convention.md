@@ -36,6 +36,21 @@ scope-kind-subject              (machine slug — kebab, derived, stable)
 | Utility block | `SYS · amCharts Loader` | SYS | — | amCharts Loader |
 | Page | `Industry Showcase · Healthcare` | — | — | (readable section name) |
 
+```mermaid
+flowchart LR
+    IN["suggest_name<br/>{ kind, scope, subject }"] --> NAME["HC · Chart Revenue by Department"]
+    NAME --> SC["scope: HC"]
+    NAME --> KD["kind: chart<br/>(closed vocab)"]
+    NAME --> SB["subject: Revenue by Department"]
+    SC --> SLUG["slug: hc-chart-revenue-by-department"]
+    KD --> SLUG
+    SB --> SLUG
+    SC -. "facet" .-> TAGS["tags: [healthcare, chart]"]
+    KD -. "facet" .-> TAGS
+```
+
+*The name encodes the tree (scope → kind → subject); tags encode the flat, cross-cutting facets. `suggest_name` derives the slug and tags so they stay consistent.*
+
 ### Vocabularies
 
 **Scope codes → facet tags** (terse code heads the display; the tag is the flat facet):

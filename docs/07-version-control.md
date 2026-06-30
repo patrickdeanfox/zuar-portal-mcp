@@ -4,6 +4,19 @@ Mirror portal **content** into a git repo and auto-commit every change the MCP m
 be reverted — without a portal "undo" feature. Source of truth stays the portal; git is a safety
 mirror.
 
+```mermaid
+flowchart LR
+    MCP["MCP content write<br/>block · layout · query · theme · …"] --> P[("Zuar Portal<br/><i>source of truth</i>")]
+    P --> MIR["mirror to git repo<br/>one JSON file per record"]
+    MIR --> CMT["git commit<br/>(only if changed)"]
+    CMT -. "PORTAL_VC_PUSH=1" .-> REM[("git remote")]
+    CMT -. "history" .-> LOG["vc_log → pick a ref"]
+    LOG --> RST["restore_resource<br/>validated write-back"]
+    RST --> P
+```
+
+*The portal stays the source of truth; git is a revertible mirror. `restore_resource` reads a prior commit and writes it back through the validated update path (so it re-commits as the new state).*
+
 ## Enabling it
 Set **`PORTAL_VC_DIR`** to a git repo path (the server runs `git init` if needed) and restart. When
 unset, every VC function is a **no-op** (the feature is fully opt-in).

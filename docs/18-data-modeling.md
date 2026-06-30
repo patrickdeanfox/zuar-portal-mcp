@@ -14,6 +14,22 @@ datasources + 20 modeled queries.
 A datasource is a **leaf**: its SQL can't reference another datasource. Composition happens in the
 **query** layer, which references datasources by alias.
 
+```mermaid
+flowchart TB
+    subgraph base["Base layer — datasources (leaves, can't reference each other)"]
+        direction LR
+        d1[("dim_customer")]
+        d2[("dim_product")]
+        f1[("fact_sales_order")]
+        f2[("fact_sales_order_line")]
+    end
+    base --> Q["📄 query (modeled view)<br/>datasources:[{id, alias}] + raw_sql<br/>JOIN by alias · single SELECT · no leading WITH"]
+    Q --> C["portal composes:<br/>WITH sol AS (…), so AS (…), …<br/>SELECT * FROM (your raw_sql)"]
+    C --> BLK["🧱 blocks bind via ui_queries"]
+```
+
+*Composition happens in the **query** layer, not the datasource — each declared datasource is injected as a CTE named by its alias.*
+
 ## Modeling joins as queries
 
 A `query` can reference **multiple** datasources and join them in `raw_sql`:
