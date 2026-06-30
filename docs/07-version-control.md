@@ -36,6 +36,11 @@ and configures push auth for you** — no `gh`/SSH/credential-helper setup neede
 PAT scoped to just the state repo**. For SSH instead, set `remote_url` to a `git@…` URL and skip the
 token (key-based auth).
 
+**Validate it up front `[2.8.0]`:** the `setup_portal` tool checks the PAT and repo against the GitHub
+API (`GET /user`, `GET /repos/{owner}/{repo}`) while writing the `vc` section, so a bad token, a typo'd
+repo URL, or a token without push permission fails fast at setup instead of silently at the first commit.
+It works for `github.com` and GitHub Enterprise (`<host>/api/v3`); skip the check with `validate_github=false`.
+
 GitHub setup (creates the repo, clones it locally, then point `PORTAL_VC_DIR` at the clone):
 ```bash
 gh repo create zuar-portal-state --private --clone   # creates + clones into ./zuar-portal-state

@@ -13,7 +13,7 @@
  * object throws `t.data.grid.layouts is undefined` while the list is built,
  * which collapses the whole `pages` collection (`l.pages is undefined`) — i.e.
  * ONE malformed record makes ALL pages disappear from the UI. On 2026-06-29
- * patrick-portal hit exactly this: an MCP-created layout had a grid with only
+ * a live portal hit exactly this: an MCP-created layout had a grid with only
  * `blocks` + `block_layouts` and no `layouts`, and every page vanished.
  *
  * The contract
@@ -44,7 +44,7 @@ const BREAKPOINTS = ["lg", "md", "sm"] as const;
 type Breakpoint = (typeof BREAKPOINTS)[number];
 
 // Per-breakpoint defaults for a layout's grid.layouts, matching the portal's own
-// page scaffold (verified against healthy patrick-portal layouts).
+// page scaffold (verified against healthy production layouts).
 const LAYOUT_BOX_DEFAULTS: Record<Breakpoint, Record<string, number | string>> = {
   lg: { width: 100, height: 100, align: "center", sizingUnit: "%", cellSize: 2 },
   md: { width: 100, height: 100, align: "center", sizingUnit: "%", cellSize: 6 },

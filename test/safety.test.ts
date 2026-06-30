@@ -14,8 +14,31 @@ import {
   dependentsOf,
   dependentsNeed,
   sqlWriteRisks,
+  secretInName,
   adminMutationRisk,
 } from "../src/safety.js";
+
+// ── secretInName ──
+test("secretInName flags a connection string with embedded password", () => {
+  const r = secretInName("postgresql://root:s0secret@db/portal");
+  assert.ok(r && /password/i.test(r));
+});
+
+test("secretInName flags a password=… connection string", () => {
+  assert.ok(secretInName("host=db user=root password=hunter2"));
+});
+
+test("secretInName flags a bare connection URI used as a name", () => {
+  assert.ok(secretInName("mysql://reporting@analytics.internal/warehouse"));
+});
+
+test("secretInName passes clean human names", () => {
+  assert.equal(secretInName("DW · Dim Customer"), null);
+  assert.equal(secretInName("CRM · Sales Bookings — Sample"), null);
+  assert.equal(secretInName("Failed Logins"), null);
+  assert.equal(secretInName(""), null);
+  assert.equal(secretInName(undefined), null);
+});
 
 // ── referencesOf ──
 test("referencesOf: layout grid.blocks -> block", () => {

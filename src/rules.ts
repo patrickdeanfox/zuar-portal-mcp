@@ -19,6 +19,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { log } from "./config.js";
+import { cssScopeFindings, parseName } from "./naming.js";
 
 // ── Top-level config ────────────────────────────────────────────────────────
 const RULES_ENV_VAR = "PORTAL_BLOCK_RULES_FILE";
@@ -45,7 +46,9 @@ export type RuleId =
   | "no_data_polling"
   | "require_query_binding"
   | "no_amcharts_loader"
-  | "enforce_theme_vars";
+  | "enforce_theme_vars"
+  | "naming_css_scope"
+  | "naming_block_name";
 
 export interface RulesConfig {
   enforcement: Record<RuleId, Severity>;
@@ -77,6 +80,11 @@ const DEFAULT_SEVERITIES: Record<RuleId, Severity> = {
   require_query_binding: "warn",
   no_amcharts_loader: "warn",
   enforce_theme_vars: "warn",
+  // Naming convention (see naming.ts + docs/NAMING_CONVENTION.md). css_scope flags
+  // global selectors leaking out of a block — universally-good hygiene → warn. The
+  // scope·kind name pattern is project-specific → off by default (opt in via rules.json).
+  naming_css_scope: "warn",
+  naming_block_name: "off",
 };
 
 const DEFAULT_CONVENTIONS = [
@@ -134,6 +142,18 @@ const DEFAULT_CONVENTIONS = [
   "- Scope CSS to the block: wrap markup in `<div class=\"wrapper\">` and scope selectors",
   "  under `.wrapper`. When several similar blocks share a page, suffix ids/classes/vars",
   "  (#chartdiv1, CONFIG_1) and wrap the script in an IIFE so nothing leaks to window.",
+  "- Never leak GLOBAL CSS out of a block: no `:root{}` (page-global tokens), no `*` reset,",
+  "  no bare `body`/`html` selectors — they clobber sibling blocks on the page.",
+  "",
+  "## Naming (scope · kind · subject)",
+  "- Name a block `SCOPE · Kind Subject`: a scope code, then a closed-vocab kind, then the",
+  "  human subject — e.g. `HC · KPI Band`, `FIN · Chart Band`, `SYS · amCharts Loader`. Scope",
+  "  codes map to facet tags (HC↔healthcare, FIN↔financial, SC↔supply-chain, RT↔retail, IOT↔iot,",
+  "  CRM↔crm, MKT↔marketing, EXEC↔executive, SYS↔system); kinds: kpi, chart, table, filter, hero,",
+  "  navigation, map, text. Use the `suggest_name` tool to generate the name + tags.",
+  "- Tag the block with its scope facet + kind facet (e.g. [healthcare, kpi]). MERGE tags, never",
+  "  replace — a tag like `Menu` can drive nav membership. The display name is for humans; a page",
+  "  URL slug is a STABLE contract — rename the title freely, but never churn the slug.",
   "",
   "## AngularJS $compile footguns",
   "- Block HTML runs through `$compile`. `{{ }}` is evaluated — escape literals as",
@@ -392,6 +412,25 @@ export function validateBlock(body: Record<string, unknown>): ValidationResult {
   const themeScope = `${html}\n${css}`;
   if ((hasHtml || hasCss) && /#[0-9a-fA-F]{3,8}\b/.test(themeScope) && !/var\(\s*--/.test(themeScope)) {
     report("enforce_theme_vars", "Hardcoded color(s) found with no theme variables (use var(--...)).");
+  }
+
+  // ── Naming convention rules (see naming.ts) ──
+  // CSS scope: a block must not leak GLOBAL selectors (:root, *, body/html) onto
+  // the page, where they clobber sibling blocks. Only flagged when CSS is present.
+  if (hasCss && css.trim()) {
+    for (const issue of cssScopeFindings(css)) report("naming_css_scope", issue);
+  }
+  // Block name: grade against the scope · kind · subject convention. Off by default
+  // (project-specific); only checked when the caller actually sets a name.
+  if (typeof body.name === "string" && body.name.trim()) {
+    const parsed = parseName(body.name);
+    if (!parsed.conforms) {
+      report(
+        "naming_block_name",
+        `Block name "${body.name}" doesn't follow the "SCOPE · Kind Subject" convention ` +
+          `(e.g. "HC · KPI Band"). Run suggest_name to generate a conforming name + tags.`
+      );
+    }
   }
 
   return result;

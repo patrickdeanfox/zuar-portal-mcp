@@ -10,3 +10,6 @@ config.json
 test-harness.mjs
 # Real portal block exports — may contain customer data; keep out of the repo
 portal_block_*.json
+
+# Local, per-portal working material (build plans, synthetic data, branded design variants) — never published.
+local/

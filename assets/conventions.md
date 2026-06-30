@@ -142,6 +142,39 @@ Two established conventions, used together:
 - When a page hosts several similar blocks, **suffix ids/classes/JS vars** with a
   block-specific number (`#chartdiv1`, `.dashboard-container1`, `CONFIG_1`) and wrap the
   script in an IIFE so nothing leaks to `window`.
+- **Never leak GLOBAL CSS** out of a block (enforced: `naming_css_scope`=warn): no
+  `:root { … }` (that defines page-global custom properties), no `*` reset, and no bare
+  `body`/`html` selectors — each clobbers every sibling block on the page. A
+  family-prefixed class shared with an *identical* body (e.g. `.hc-card`) is fine; a
+  *divergent* shared class is the real collision.
+
+## Naming (scope · kind · subject)
+
+A name is a structured slug that encodes **scope → kind → subject**, so humans and tools
+recover, from the name alone, *where* a thing lives, *what* it is, and *what it means*.
+
+- Name a block **`SCOPE · Kind Subject`** — a scope code, a closed-vocab kind, then the
+  human subject: `HC · KPI Band`, `FIN · Chart Band`, `HC · Chart Revenue by Department`,
+  `SYS · amCharts Loader`. The display name uses ` · `; the machine slug is kebab.
+- **Scope codes** map to facet tags: `HC`↔healthcare, `FIN`↔financial, `SC`↔supply-chain,
+  `RT`↔retail, `IOT`↔iot, `CRM`↔crm, `MKT`↔marketing, `EXEC`↔executive, `SYS`↔system,
+  `DW`↔data-warehouse. **Kinds:** kpi, chart, table, filter, hero, navigation, map, text.
+- **Datasources & queries (data profile):** name them `SCOPE · Subject — Source` and **drop the kind
+  word** — a datasource/query/page is a *resource kind*, already known from context, so it's
+  `DW · Dim Customer`, not `DW · Datasource Dim Customer` (the kind still becomes a tag). Mark the
+  **source facet** as a `— <Source>` suffix + tag: `sample` (synthetic), `live` (unmarked default),
+  `telemetry`, `curated`, `reference`. Never name a datasource after its connection string — a name like
+  `postgresql://user:pass@host/db` leaks the password (`validate_portal` flags it; rename AND rotate).
+- Use the **`suggest_name`** tool to generate the display name, slug, and tags from parts,
+  and **`parse_name`** to grade an existing name. Don't hand-transcribe names.
+- **Tag** the block with its scope facet + kind facet (e.g. `[healthcare, kpi]`). **MERGE
+  tags, never replace** — a tag can be functional (e.g. a `Menu` tag driving nav). On
+  `update_block`, pass `merge_tags: true` to union with the block's existing tags.
+- A page's **URL slug is a stable contract** — rename the display *title* freely, but never
+  churn the slug (it backs `/p/slug` links and cross-page drill-through).
+- Renaming is metadata-only: a name/tags change is **not** re-validated against the block's
+  stored JS (a legacy `$` won't block a rename), and a **datasource rename is content-risk**
+  (no `PORTAL_ALLOW_DATA_WRITES` needed) — only SQL/connection edits are data writes.
 
 ## AngularJS $compile footguns
 
@@ -257,6 +290,13 @@ library-loader block with no data.
   event) won't expose the shaped columns a chart expects (e.g. `page_url`, `page_views`).
   Put the `GROUP BY … COUNT(*)`/`SUM(…)` in the query's SQL so it returns chart-ready
   columns; don't rely on the block JS to aggregate raw rows.
+- **Model joins as queries (the semantic layer).** A `query` can reference **multiple**
+  datasources — `datasources: [{ id, alias }, …]` — and join them in `raw_sql` using the
+  aliases as table names. The portal injects each as a CTE (`WITH <alias> AS (SELECT * FROM
+  (<ds sql>) …)`) and runs `SELECT * FROM (<raw_sql>) …`, so **`raw_sql` must be a single
+  SELECT with NO leading `WITH`** — use derived subqueries for pre-aggregation. This is how
+  you build denormalized marts (fact ⋈ dims) and rollups DRY, without duplicating base SQL.
+  Queries are content-domain (no data flag) and version-controlled.
 - **`page_size` default = `null` (all rows). Prefer it.** `ui_queries[n].page_size` caps how
   many rows reach `queryResults[n]`; `null` (or `0`) means **no limit — return everything**.
   Default to `null` so the block sees the full dataset; only set a number when capping

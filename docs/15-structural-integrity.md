@@ -9,7 +9,7 @@
 ## The incident (postmortem)
 
 **2026-06-29 — "all my pages got deleted."** Every page vanished from
-patrick-portal's navigation and the browser console showed:
+the portal's navigation and the browser console showed:
 
 ```
 can't access property "length", l.pages is undefined

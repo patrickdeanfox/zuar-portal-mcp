@@ -6,7 +6,7 @@ An [MCP](https://modelcontextprotocol.io) server that lets **Claude operate your
 
 **Block writes are validated.** HTML blocks go through dedicated, validated tools (`create_block`/`update_block`). Every other resource is reached through generic resource tools. **Writes are gated by risk domain** — content edits are on by default; data (SQL) and admin (users/security) writes are opt-in (see [Write safety](#write-safety)).
 
-> **📚 Full documentation:** the complete guide lives in **[`docs/`](docs/README.md)** — overview, install & config, a reference for all 40 tools, block authoring, the authoring rules, the design system, version control, the in-block `zPortal` API, recipes, loops/automation & data exploration, the [Claude Code agent ecosystem](docs/13-agents-and-workflows.md), [tool gating & guidance](docs/14-tool-gating-and-guidance.md), and troubleshooting.
+> **📚 Full documentation:** the complete guide lives in **[`docs/`](docs/README.md)** — overview, install & config, a reference for all 43 tools, block authoring, the authoring rules, the design system, version control, the in-block `zPortal` API, recipes, loops/automation & data exploration, the [Claude Code agent ecosystem](docs/13-agents-and-workflows.md), [tool gating & guidance](docs/14-tool-gating-and-guidance.md), and troubleshooting.
 
 > **🏢 Multi-portal & multi-repo (v2.4.0):** one install can drive a **different portal + git repo per folder** via a per-project `./.zuar-portal/config.json`. And when you work in this repo from **Claude Code**, you get a whole **team of specialist agents** (build / style / debug / responsive / theme / bulk / data-expert / advisory) plus slash commands and gated workflows. See [Per-project configuration](#per-project-configuration-multiple-portals) and [Driving it from Claude Code](#driving-it-from-claude-code-the-agent-ecosystem).
 
@@ -82,6 +82,7 @@ One set of tools operates every other resource. Pass `resource` plus a `body`/`i
 | `get_rules` | Show active block-authoring rules. | read |
 | `get_capabilities` | Report the current posture — enabled/disabled tool groups, write-safety, VC + audit status, active portal (always available). | read |
 | `active_config` | Report which project config / portal / VC repo is in effect (secrets redacted). | read |
+| `setup_portal` | **Guided** setup — prompts (via elicitation) for portal creds + optional GitHub VC, validates both (live login + GitHub API), then writes `./.zuar-portal/config.json`. | setup |
 | `init_project_config` | Write this folder's `./.zuar-portal/config.json` for a specific portal (+ optional VC) and validate it. | setup |
 
 **Resources** — authoring guidance Claude reads before building, so blocks follow zPortal conventions even if you've never set up a zPortal skill:
@@ -90,7 +91,7 @@ One set of tools operates every other resource. Pass `resource` plus a `body`/`i
 - `zportal://guide/currentblock` — reading query data inside a block and reacting to filters
 - `zportal://guide/amcharts-loader` — the amCharts 5 two-block loader pattern
 
-**Prompts** — `zuar_portal_quickstart` (get oriented: confirm posture, then route to the right next step), `create_zportal_block` (a guided "discover data → build → create" workflow) and `setup_zuar_project` (walks you through connecting this folder to a portal) — invoke any from your MCP client.
+**Prompts** — `zuar_portal_quickstart` (get oriented: confirm posture, then route to the right next step), `create_zportal_block` (a guided "discover data → build → create" workflow) and `setup_zuar_project` (walks you through connecting this folder to a portal — routes to the elicitation-driven `setup_portal` tool) — invoke any from your MCP client.
 
 ---
 
@@ -220,11 +221,14 @@ rest from the environment. The file uses the same schema for both the portal and
 }
 ```
 
-**Set it up without hand-editing JSON:** ask Claude to run **`init_project_config`** (or the
-**`setup_zuar_project`** prompt, or `/portal-setup` in Claude Code). It writes the file + a `.gitignore`,
-validates the credentials with a live login, and refuses to clobber an existing config. **`active_config`**
-shows which portal/repo is currently in effect (secrets redacted). `./.zuar-portal/` is gitignored, so
-credentials never get committed.
+**Set it up without hand-editing JSON:** ask Claude to run **`setup_portal`** — on a client that supports
+**elicitation** it prompts you field-by-field for the portal creds and an optional GitHub repo, then
+validates the portal (live login) **and** the GitHub token/repo (GitHub API) before writing the file. If
+the client can't prompt, it falls back to argument-only mode (same as **`init_project_config`**, which you
+can also call directly). The **`setup_zuar_project`** prompt / `/portal-setup` in Claude Code route to it.
+All of these write the file + a `.gitignore`, validate with a live login, and refuse to clobber an existing
+config. **`active_config`** shows which portal/repo is in effect (secrets redacted). `./.zuar-portal/` is
+gitignored, so credentials never get committed.
 
 ---
 

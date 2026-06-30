@@ -34,6 +34,9 @@ export interface ResourceDescriptor {
   collectionPath: string; // full path incl. service segment, e.g. "/api/datasources"
   idLabel: string; // what the {id} path param represents ("id", "name", ...)
   domain: WriteDomain; // gates writes via config.blockReason
+  riskFields?: string[]; // fields that actually carry the domain's risk. A metadata-only
+  //                        update (touching none of these — e.g. a datasource RENAME) is
+  //                        gated as "content", so it doesn't need the data/admin flag.
   writeFields: string[]; // fields copied into create/update bodies (everything else dropped)
   requiredCreate: string[]; // subset of writeFields that must be present to create
   verbs: Record<Verb, boolean>; // which generic tools this resource supports
@@ -82,13 +85,14 @@ function res(
   writeFields: string[],
   requiredCreate: string[],
   verbs: Partial<Record<Verb, boolean>>,
-  opts: { idLabel?: string; updateMethod?: "PUT" | "PATCH"; notes?: string } = {}
+  opts: { idLabel?: string; updateMethod?: "PUT" | "PATCH"; notes?: string; riskFields?: string[] } = {}
 ): ResourceDescriptor {
   return {
     key,
     label,
     collectionPath,
     domain,
+    riskFields: opts.riskFields,
     writeFields,
     requiredCreate,
     verbs: partialVerbs(verbs),
@@ -96,6 +100,19 @@ function res(
     updateMethod: opts.updateMethod ?? "PUT",
     notes: opts.notes,
   };
+}
+
+// A write that touches only metadata (e.g. name/tags) on a data/admin resource
+// carries none of that domain's risk — a datasource RENAME changes no SQL. When a
+// descriptor declares riskFields, an update whose patch touches none of them is
+// gated as "content", so renames/retags don't require PORTAL_ALLOW_DATA_WRITES.
+export function effectiveUpdateDomain(
+  desc: ResourceDescriptor,
+  patch: Record<string, unknown>
+): WriteDomain {
+  if (desc.domain === "content" || !desc.riskFields) return desc.domain;
+  const touchesRisk = Object.keys(patch).some((k) => desc.riskFields!.includes(k));
+  return touchesRisk ? desc.domain : "content";
 }
 
 const FULL: Partial<Record<Verb, boolean>> = {
@@ -196,7 +213,10 @@ export const DESCRIPTORS: ResourceDescriptor[] = [
     ["name", "sql", "json_data", "tags", "default_params", "database_connection"],
     ["name"],
     FULL,
-    { notes: "Creating/updating sets SQL — a data-domain write." }
+    {
+      riskFields: ["sql", "json_data", "default_params", "database_connection"],
+      notes: "Creating/updating SQL is a data-domain write; a name/tags-only change is treated as content (no data flag needed).",
+    }
   ),
   res(
     "db_modification",
@@ -206,7 +226,10 @@ export const DESCRIPTORS: ResourceDescriptor[] = [
     ["name", "sql", "credentials_id", "default_params", "access"],
     ["name", "sql"],
     FULL,
-    { notes: "get accepts id OR name. Running it is a separate, gated tool." }
+    {
+      riskFields: ["sql", "credentials_id", "default_params", "access"],
+      notes: "get accepts id OR name. Running it is a separate, gated tool. A name-only change is treated as content.",
+    }
   ),
 
   // ── Admin (users/security/config; needs PORTAL_ALLOW_ADMIN_WRITES) ──
@@ -413,6 +436,13 @@ export async function getResource(desc: ResourceDescriptor, id: string): Promise
   }
 }
 
+// Which resources are mirrored to version control: all CONTENT resources plus
+// datasources (the data model — SQL + tags, no raw secrets). Admin resources
+// (users/groups/credentials) are deliberately excluded — they can carry secrets.
+function mirrorsToVc(desc: ResourceDescriptor): boolean {
+  return desc.domain === "content" || desc.key === "datasource";
+}
+
 export async function createResource(
   desc: ResourceDescriptor,
   body: Record<string, unknown>
@@ -433,7 +463,7 @@ export async function createResource(
   await gateReferences(desc, payload);
   try {
     const out = await request("POST", desc.collectionPath, payload);
-    if (desc.domain === "content") {
+    if (mirrorsToVc(desc)) {
       const rec = out as Record<string, unknown> | null;
       recordWrite(desc.key, rec?.[desc.idLabel] ?? rec?.id, "create", out);
     }
@@ -449,15 +479,16 @@ export async function updateResource(
   body: Record<string, unknown>
 ): Promise<unknown> {
   ensureVerb(desc, "update");
-  const reason = blockReason(desc.domain);
-  if (reason) throw new ResourceError(reason);
-
   const patch = pickWriteFields(desc, body);
   if (Object.keys(patch).length === 0) {
     throw new ResourceError(
       `No updatable fields provided for ${desc.key}. Allowed: ${desc.writeFields.join(", ")}.`
     );
   }
+  // Gate on the EFFECTIVE domain: a metadata-only change (e.g. name/tags) to a
+  // data/admin resource is content-risk, so a rename doesn't need the data/admin flag.
+  const reason = blockReason(effectiveUpdateDomain(desc, patch));
+  if (reason) throw new ResourceError(reason);
   // Referential check on the caller's patch (not the merged record) so an unrelated
   // edit to a record with a pre-existing dangling ref isn't blocked.
   await gateReferences(desc, patch);
@@ -472,7 +503,7 @@ export async function updateResource(
     // Final structural check on exactly what will be written.
     merged = gateStructure(desc, "update", merged);
     const out = await request(desc.updateMethod, itemPath(desc, id), merged);
-    if (desc.domain === "content") recordWrite(desc.key, id, "update", out);
+    if (mirrorsToVc(desc)) recordWrite(desc.key, id, "update", out);
     return out;
   } catch (e) {
     rethrowFriendly(desc, e);
@@ -485,7 +516,7 @@ export async function deleteResource(desc: ResourceDescriptor, id: string): Prom
   if (reason) throw new ResourceError(reason);
   try {
     const r = await request("DELETE", itemPath(desc, id));
-    if (desc.domain === "content") recordDelete(desc.key, id);
+    if (mirrorsToVc(desc)) recordDelete(desc.key, id);
     return r ?? { deleted: id, resource: desc.key };
   } catch (e) {
     rethrowFriendly(desc, e);

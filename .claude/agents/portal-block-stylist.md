@@ -39,6 +39,32 @@ The live portal is **v1.19** (confirm with `get_version`). Read the active theme
 5. **Update — RE-SEND `ui_queries`.** `update_block` MUST include the exact `ui_queries` array you read in step 1. An `update_block` that omits `ui_queries` wipes the binding and the block goes blank. Re-send it verbatim alongside your new `json_data.html` + `css`.
 6. **Confirm.** `get_block` again to verify the binding persisted unchanged and your styles landed.
 
+## House KPI micro-components (no charting lib) `[2.8.0]`
+
+Two synchronous, theme-token-colored components for KPI cards — pure inline SVG, no library load, so they
+render in the KPI band without async/`getOnLoadedCallback`. Color via `getComputedStyle` of a token
+(e.g. `--color-primary`) with a fallback.
+
+**Sparkline (distribution mini-bars)** — pass an array of values:
+```js
+function sparkBars(vals, color){ if(!vals.length) return '';
+  var w=100,h=26,n=vals.length,gap=n>1?2:0,bw=(w-gap*(n-1))/n,max=Math.max.apply(null,vals)||1;
+  var s='<svg viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none" width="100%" height="26">';
+  for(var i=0;i<n;i++){var bh=Math.max(2,(vals[i]/max)*(h-2));
+    s+='<rect x="'+(i*(bw+gap)).toFixed(2)+'" y="'+(h-bh).toFixed(2)+'" width="'+bw.toFixed(2)+'" height="'+bh.toFixed(2)+'" rx="1" fill="'+color+'"></rect>';}
+  return s+'</svg>'; }
+```
+
+**Donut (a single percentage, e.g. win rate)** — stroke-dasharray ring with the % in the center:
+```js
+function donut(pct,color,track){ var size=44,sw=7,r=(size-sw)/2,cx=size/2,cy=size/2,c=2*Math.PI*r,off=c*(1-Math.max(0,Math.min(100,pct))/100);
+  return '<svg viewBox="0 0 '+size+' '+size+'" width="'+size+'" height="'+size+'">'
+   +'<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+track+'" stroke-width="'+sw+'"></circle>'
+   +'<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+color+'" stroke-width="'+sw+'" stroke-linecap="round" stroke-dasharray="'+c.toFixed(2)+'" stroke-dashoffset="'+off.toFixed(2)+'" transform="rotate(-90 '+cx+' '+cy+')"></circle>'
+   +'<text x="'+cx+'" y="'+cy+'" text-anchor="middle" dominant-baseline="central" font-size="11.5" font-weight="800" fill="#1f2937">'+Math.round(pct)+'%</text></svg>'; }
+```
+Inject with `el.innerHTML = sparkBars(...)` / `donut(...)`. Keep the card's headline number as text; place the donut beside it. No literal `$` anywhere (use `String.fromCharCode(36)` if you need a currency sign).
+
 ## Output contract
 Return a compact report (you are a pipeline stage — your text feeds the orchestrator / the responsive specialist / the debugger, not the raw user):
 - the `block_id` and what changed **visually** (component pattern applied, accent/token choices, type/spacing/elevation moves, focus/hover states added),

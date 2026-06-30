@@ -303,6 +303,31 @@ export function describeSqlRisk(r: SqlRisk): string {
   }
 }
 
+// ── 3a. Credential-in-name hygiene ────────────────────────────────────────────
+/**
+ * Detect when a record NAME leaks a credential or is a raw connection string —
+ * e.g. a datasource accidentally named `postgresql://root:s0secret@db/portal`. Such a
+ * name exposes the secret in every list, in the portal UI, and in logs; renaming hides
+ * it but the secret must still be rotated. Returns a short reason when the name looks
+ * unsafe, else null. Conservative on purpose — only high-signal patterns, so plain
+ * names (even ones containing the word "password" mid-sentence are NOT flagged unless
+ * they read as `password=…`).
+ */
+export function secretInName(name: unknown): string | null {
+  if (typeof name !== "string" || !name.trim()) return null;
+  const s = name.trim();
+  // scheme://user:password@host — a connection URI with embedded credentials.
+  if (/^[a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:[^/\s@]+@/i.test(s))
+    return "name is a connection string with an embedded password — rename and ROTATE the credential";
+  // key=value connection string carrying a password.
+  if (/\b(password|passwd|pwd)\s*=\s*\S/i.test(s))
+    return "name contains a password=… secret — rename and ROTATE the credential";
+  // bare scheme://…@host — a connection URI used as a name.
+  if (/^[a-z][a-z0-9+.-]*:\/\/\S+@\S+/i.test(s))
+    return "name is a database connection URI — give it a human label instead";
+  return null;
+}
+
 // ── 3b. Admin / lockout safety ────────────────────────────────────────────────
 
 export interface AdminCtx {

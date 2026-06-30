@@ -5,7 +5,7 @@ end to end: author HTML blocks, build pages, manage datasources/queries/themes/u
 and (new in 2.2.0) keep a git-versioned, revertible history of every content change — all through
 natural language.
 
-> **Versions:** these docs describe the MCP server at **v2.6.0** (current on `main`), targeting a
+> **Versions:** these docs describe the MCP server at **v2.7.0** (current on `main`), targeting a
 > **Zuar Portal 1.19** instance (the in-block data API is the stable "v1.18+" shape). Feature flags
 > like **`[2.2.0]`** / **`[2.5.0]`** mark the release a surface landed in. New tools/rules/version-control
 > take effect in your **running** server only after `npm run build` + `.mcpb` repack + MCP restart.
@@ -22,7 +22,7 @@ natural language.
 |---|-----|---------------------------|
 | 01 | [Overview](01-overview.md) | Understand what the server is and how it's structured |
 | 02 | [Install & Configuration](02-install-and-config.md) | Install it, set per-project (multi-portal) credentials, and tune the write-safety, tool-gating, audit, VC + design env vars |
-| 03 | [Tools Reference](03-tools-reference.md) | Look up any of the 40 tools — params, risk domain, examples |
+| 03 | [Tools Reference](03-tools-reference.md) | Look up any of the 43 tools — params, risk domain, examples |
 | 04 | [Authoring Blocks](04-authoring-blocks.md) | Build HTML blocks: data binding, `queryResults`, the safe build flow |
 | 05 | [Authoring Rules](05-authoring-rules.md) | Know what `create_block`/`update_block` enforce, and configure it |
 | 06 | [Design System](06-design-system.md) | Give every block one house look via `design.md` (+ design skills) |
@@ -36,6 +36,8 @@ natural language.
 | 14 | [Tool Gating & Guidance](14-tool-gating-and-guidance.md) | Capability scoping (enable/disable tool groups), guided usage, audit log |
 | 15 | [Structural Integrity Gate](15-structural-integrity.md) | Understand the hard write-gate that stops the server writing a portal-breaking record (the "all pages vanished" class of bug) |
 | 16 | [Safety & Integrity Gates](16-safety-and-integrity.md) | The full safety surface — referential integrity, pre-delete impact, mass-write SQL guard, admin lockout, and the read-only `validate_portal` sweep |
+| 17 | [Naming & Tagging Convention](17-naming-convention.md) | The `scope · kind · subject` name grammar, the `suggest_name`/`parse_name` tools, the tag-merge + slug-stability invariants, the datasource/data-asset profile + source facet **`[2.8.0]`**, and the metadata-only / datasource-rename fixes **`[2.7.0]`** |
+| 18 | [Data Modeling](18-data-modeling.md) | Build a ready data model: raw tables as datasources + a modeled **query** layer that joins them by alias (CTE injection, no leading `WITH`), the `date ± bigint` Postgres gotcha, naming/hygiene, and datasource version-control **`[2.8.0]`** |
 
 ## The one-minute mental model
 - **Blocks** are HTML/JS/CSS surfaces. They **bind to data** through a saved **query** (which wraps a

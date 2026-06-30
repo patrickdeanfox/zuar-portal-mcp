@@ -56,6 +56,7 @@ import {
   isVcEnabled,
 } from "./portalVc.js";
 import { getRules, validateBlock, type ValidationResult } from "./rules.js";
+import { mergeTags, parseName, suggestName, SCOPE_TAGS, KIND_DISPLAY } from "./naming.js";
 import {
   referencesOf,
   findMissingRefs,
@@ -64,11 +65,13 @@ import {
   dependentsNeed,
   sqlWriteRisks,
   describeSqlRisk,
+  secretInName,
   adminMutationRisk,
   type Dependent,
   type DependentsCtx,
 } from "./safety.js";
 import { normalizeAndValidateForWrite } from "./structure.js";
+import { validateGithubAccess } from "./github.js";
 import {
   DESCRIPTORS,
   RESOURCE_KEYS,
@@ -96,9 +99,10 @@ const SERVER_INSTRUCTIONS = [
   "Zuar Portal MCP — operate a Zuar Portal (zPortal) end to end: author HTML blocks, build pages,",
   "manage datasources/queries/themes/users, explore data, and version-control content.",
   "",
-  "Start here: call active_config to confirm which portal you're pointed at (run init_project_config",
-  "or the setup_zuar_project prompt if it's not configured), and get_capabilities to see which tool",
-  "groups and write permissions are enabled. get_version confirms connectivity.",
+  "Start here: call active_config to confirm which portal you're pointed at (run setup_portal — which",
+  "prompts for the portal creds + optional GitHub repo via elicitation — or init_project_config if it's",
+  "not configured), and get_capabilities to see which tool groups and write permissions are enabled.",
+  "get_version confirms connectivity.",
   "",
   "Authoring blocks: READ the zportal://guide/* resources first (block-structure, currentblock,",
   "conventions, design-system, charting). Blocks are HTML-only; put HTML+JS in json_data.html and CSS",
@@ -547,6 +551,7 @@ const resourceEnum = z
 const TOOL_GROUPS: Record<string, string> = {
   // discovery (read-only introspection)
   get_version: "discovery", get_rules: "discovery", describe_resource: "discovery", get_me: "discovery",
+  suggest_name: "discovery", parse_name: "discovery",
   // blocks (typed HTML authoring + page placement)
   list_blocks: "blocks", get_block: "blocks", validate_block: "blocks", create_block: "blocks",
   update_block: "blocks", delete_block: "blocks", bind_block_query: "blocks",
@@ -564,7 +569,7 @@ const TOOL_GROUPS: Record<string, string> = {
   // vc (git version control of content)
   vc_status: "vc", snapshot_portal: "vc", vc_log: "vc", restore_resource: "vc",
   // setup (per-project credential bootstrap)
-  active_config: "setup", init_project_config: "setup",
+  active_config: "setup", init_project_config: "setup", setup_portal: "setup",
   // meta (always-available introspection)
   get_capabilities: "meta", get_metrics: "meta",
 };
@@ -815,7 +820,17 @@ function registerBlockTools(server: McpServer): void {
         ),
         css: z.union([z.string(), z.array(z.any())]).optional().describe("New CSS."),
         json_data: z.record(z.string(), z.any()).optional().describe("New widget/extra config."),
-        tags: z.array(z.string()).optional().describe("Replacement tag list."),
+        tags: z
+          .array(z.string())
+          .optional()
+          .describe("Tag list — replaces existing tags, unless merge_tags:true (then these are added)."),
+        merge_tags: z
+          .boolean()
+          .optional()
+          .describe(
+            "Merge `tags` into the block's existing tags instead of replacing them — preserves " +
+              "functional tags (e.g. a nav 'Menu' tag). Default false."
+          ),
         access: z.record(z.string(), z.any()).optional().describe("New access control object."),
       },
       annotations: {
@@ -829,16 +844,28 @@ function registerBlockTools(server: McpServer): void {
       try {
         const reason = blockReason(BLOCK_DOMAIN);
         if (reason) return fail(reason);
-        const { block_id, ...rest } = args;
+        const { block_id, merge_tags, ...rest } = args;
         // The portal PUT is a full replace (and requires `name`). Fetch the current
         // block and merge the provided fields over it so untouched fields aren't nulled.
         const existing = await request<Record<string, unknown>>(
           "GET",
           `/api/blocks/${encodeURIComponent(block_id)}`
         );
-        const merged = { ...buildBlockBody(existing), ...buildBlockBody(rest) };
+        const restBody = rest as Record<string, unknown>;
+        // Optionally MERGE new tags over the block's existing tags rather than replacing
+        // them — a tag can be functional (e.g. a "Menu" tag driving nav), so a blind
+        // replace is a footgun. Off by default (tags replace, as before).
+        if (merge_tags && Array.isArray(restBody.tags)) {
+          restBody.tags = mergeTags(existing.tags, restBody.tags);
+        }
+        const merged = { ...buildBlockBody(existing), ...buildBlockBody(restBody) };
         if (merged.css === undefined || merged.css === null) merged.css = [];
-        const v = validateBlock(merged);
+        // Validate ONLY the fields the caller is actually changing — not the merged-in
+        // existing content. A metadata-only update (rename/retag) must not be blocked by a
+        // pre-existing rule violation the caller never introduced (e.g. a legacy literal `$`
+        // already stored in the block). validateBlock guards each rule on field presence, so
+        // the caller's body alone runs exactly the rules for what changed.
+        const v = validateBlock(buildBlockBody(restBody));
         if (v.errors.length > 0) return fail(formatViolations(v));
         // Check only the caller-provided fields (e.g. a new ui_queries), not the
         // merged-in existing binding, so an unrelated edit isn't blocked.
@@ -1447,9 +1474,10 @@ function registerResourceTools(server: McpServer): void {
         "Sweep every page (layout), partial, theme, query, block, db_modification and system record " +
         "and report anything that would break or render wrong: structurally malformed records (e.g. a " +
         "page missing grid.layouts — the 'all pages vanished' bug), dangling references (a page/block " +
-        "pointing at a deleted block/query/datasource), and unscoped mass-write SQL (UPDATE/DELETE with " +
-        "no WHERE, TRUNCATE, DROP). Fixes nothing — run it after bulk changes or on a schedule to catch " +
-        "latent breakage before users do.",
+        "pointing at a deleted block/query/datasource), unscoped mass-write SQL (UPDATE/DELETE with " +
+        "no WHERE, TRUNCATE, DROP), and datasource hygiene (a name that leaks a connection-string/" +
+        "password, or a datasource reporting a broken connection). Fixes nothing — run it after bulk " +
+        "changes or on a schedule to catch latent breakage before users do.",
       inputSchema: {
         limit: z
           .number()
@@ -1553,6 +1581,16 @@ function registerResourceTools(server: McpServer): void {
           }
         }
 
+        // 4) Datasource hygiene — credential-leaking names and stored connection errors.
+        for (const rec of datasources) {
+          const r = rec as Record<string, unknown>;
+          const leak = secretInName(r?.name);
+          if (leak) add("datasource", rec, "secret_in_name", leak);
+          const err = r?.error;
+          if (typeof err === "string" && err.trim())
+            add("datasource", rec, "datasource_error", `datasource reports an error (broken connection/SQL): ${err.trim()}`);
+        }
+
         const total = issues.length;
         const byType: Record<string, number> = {};
         for (const i of issues) byType[i.type] = (byType[i.type] ?? 0) + 1;
@@ -1568,6 +1606,7 @@ function registerResourceTools(server: McpServer): void {
             queries: queries.length,
             blocks: blocks.length,
             db_modifications: dbmods.length,
+            datasources: datasources.length,
             system: system.length,
           },
           issues: returned,
@@ -1596,6 +1635,75 @@ function registerActionTools(server: McpServer): void {
     async () => {
       try {
         return ok(getRules());
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+
+  // suggest_name — generate a convention-conforming name + slug + facet tags.
+  server.registerTool(
+    "suggest_name",
+    {
+      title: "Suggest a convention name",
+      description:
+        "Generate a naming-convention-conforming display name, a stable machine slug, and facet tags " +
+        "from parts. Convention: `SCOPE · Kind Subject` (scope → kind → subject). `scope` accepts a code " +
+        "or a facet tag (" +
+        Object.entries(SCOPE_TAGS)
+          .map(([c, t]) => `${c}=${t}`)
+          .join(", ") +
+        "); `kind` is one of: " +
+        Object.keys(KIND_DISPLAY).join(", ") +
+        ". Resource kinds (datasource/query/page/partial/theme/group) OMIT the kind word from the display " +
+        "name (the record type is already known — 'DW · Dim Customer', not 'DW · Datasource Dim Customer'); " +
+        "the kind still becomes a facet tag. Prefer this over hand-naming so names — and the slugs/tags " +
+        "derived from them — stay consistent.",
+      inputSchema: {
+        kind: z
+          .string()
+          .min(1)
+          .describe("Content kind: kpi, chart, table, filter, hero, navigation, map, text, page, query, datasource, theme…"),
+        scope: z.string().optional().describe("Scope code (e.g. HC, DW) or facet tag (e.g. healthcare)."),
+        subject: z.string().optional().describe("Human subject phrase, e.g. 'Revenue by Department'."),
+        qualifier: z.string().optional().describe("Optional variant/grain, e.g. 'YTD' or 'by-region'."),
+        source: z
+          .string()
+          .optional()
+          .describe(
+            "Data-asset source facet for datasources/queries: sample, live, telemetry, curated, or " +
+              "reference. Adds a '— <Source>' marker + tag; omit to leave a name unmarked (the 'live' default)."
+          ),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async (args) => {
+      try {
+        return ok(
+          suggestName(args as { kind: string; scope?: string; subject?: string; qualifier?: string; source?: string })
+        );
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+
+  // parse_name — decompose a name into scope/kind/subject and grade conformance.
+  server.registerTool(
+    "parse_name",
+    {
+      title: "Parse a name into convention parts",
+      description:
+        "Decompose a display name into scope, kind, subject, and a derived stable slug, and report " +
+        "whether it conforms to the `SCOPE · Kind Subject` convention. Use to audit or grade existing names.",
+      inputSchema: {
+        name: z.string().min(1).describe("The display name to parse, e.g. 'HC · KPI Band'."),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async (args) => {
+      try {
+        return ok(parseName((args as { name: string }).name));
       } catch (e) {
         return fail((e as Error).message);
       }
@@ -2313,6 +2421,243 @@ function registerConfigTools(server: McpServer): void {
       }
     }
   );
+
+  // setup_portal — interactive, elicitation-driven onboarding (portal creds + GitHub VC).
+  // Prompts the user field-by-field via MCP elicitation when the client supports it, then
+  // validates (live portal login + GitHub API) and writes .zuar-portal/config.json. Every
+  // field can also be passed as an argument (skips its prompt) so it works headlessly and is
+  // testable. Falls back with an actionable message when the client can't do elicitation.
+  server.registerTool(
+    "setup_portal",
+    {
+      title: "Guided portal + GitHub setup",
+      description:
+        "Interactive first-time setup. Collects your Zuar Portal credentials (URL, API key, user ID) " +
+        "and — optionally — GitHub version-control settings (repo URL, PAT, local mirror path) by PROMPTING " +
+        "you field-by-field via MCP elicitation when the client supports it. Validates the portal with a " +
+        "live login and the GitHub token/repo against the GitHub API, then writes ./.zuar-portal/config.json " +
+        "(+ a .gitignore so secrets never get committed). Any field passed as an argument is used as-is and " +
+        "not prompted for. If the client can't do elicitation, pass the fields as arguments (or use " +
+        "init_project_config). Secrets are stored locally and never echoed or logged.",
+      inputSchema: {
+        portal_url: z.string().optional().describe("Base portal URL (skips the prompt for it)."),
+        api_key: z.string().optional().describe("Portal API key (skips the prompt)."),
+        user_id: z.string().optional().describe("Your user UUID (skips the prompt)."),
+        setup_github: z.boolean().optional().describe("Force GitHub version control on/off instead of asking."),
+        vc_dir: z.string().optional().describe("Local git repo path to mirror content writes into."),
+        vc_remote_url: z.string().optional().describe("GitHub repo URL, e.g. https://github.com/you/portal-state.git"),
+        vc_token: z.string().optional().describe("GitHub PAT for HTTPS push (stored locally, never logged)."),
+        vc_username: z.string().optional().describe("HTTPS username for the token (default x-access-token)."),
+        vc_push: z.boolean().optional().describe("Push after each commit (default true when a remote is set)."),
+        overwrite: z.boolean().optional().describe("Overwrite an existing project config (default false)."),
+        validate: z.boolean().optional().describe("Validate portal creds with a live login (default true)."),
+        validate_github: z.boolean().optional().describe("Validate the GitHub token/repo via the API (default true)."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async (args) => {
+      try {
+        const target = projectConfigTarget();
+        if (fs.existsSync(target) && !args.overwrite) {
+          return fail(
+            `A project config already exists at ${target}. Pass overwrite=true to replace it ` +
+              `(its current values are not shown for safety).`
+          );
+        }
+
+        // Elicitation is a server→client request: only usable if the connected client
+        // advertised the capability. Otherwise we fall back to argument-only operation.
+        const caps = server.server.getClientCapabilities() as { elicitation?: unknown } | undefined;
+        const canElicit = Boolean(caps && caps.elicitation);
+
+        type Round =
+          | { status: "accept"; content: Record<string, unknown> }
+          | { status: "declined" }
+          | { status: "cancelled" };
+        async function elicitForm(
+          message: string,
+          properties: Record<string, unknown>,
+          required: string[]
+        ): Promise<Round> {
+          const res = await server.server.elicitInput({
+            message,
+            requestedSchema: { type: "object", properties: properties as Record<string, never>, required },
+          });
+          if (res.action === "accept") return { status: "accept", content: (res.content ?? {}) as Record<string, unknown> };
+          if (res.action === "decline") return { status: "declined" };
+          return { status: "cancelled" };
+        }
+        const cancelled = (note: string) => ok({ cancelled: true, written: null, note });
+        const str = (v: unknown): string => String(v ?? "").trim();
+
+        // ── Portal credentials (required) ───────────────────────────────────
+        let portalUrl = args.portal_url?.trim();
+        let apiKey = args.api_key?.trim();
+        let userId = args.user_id?.trim();
+        if (!portalUrl || !apiKey || !userId) {
+          if (!canElicit) {
+            const missing = [!portalUrl && "portal_url", !apiKey && "api_key", !userId && "user_id"]
+              .filter(Boolean)
+              .join(", ");
+            return fail(
+              `This MCP client doesn't support interactive prompts (elicitation). Re-run setup_portal with ` +
+                `these arguments — ${missing} — or use init_project_config. Nothing was written.`
+            );
+          }
+          const props: Record<string, unknown> = {};
+          const req: string[] = [];
+          if (!portalUrl) {
+            props.portal_url = { type: "string", title: "Portal URL", format: "uri", description: "e.g. https://your-portal.zuarbase.net" };
+            req.push("portal_url");
+          }
+          if (!apiKey) {
+            props.api_key = { type: "string", title: "Portal API key", description: "Admin → Auth → API Keys. Stored locally (gitignored); never logged." };
+            req.push("api_key");
+          }
+          if (!userId) {
+            props.user_id = { type: "string", title: "Your user ID (UUID)", description: "Admin → Users; copy from the URL." };
+            req.push("user_id");
+          }
+          const r = await elicitForm(
+            "Connect your Zuar Portal. These are stored locally in .zuar-portal/config.json (gitignored) and never logged.",
+            props,
+            req
+          );
+          if (r.status !== "accept") return cancelled("Portal setup was cancelled; nothing was written.");
+          portalUrl = portalUrl ?? str(r.content.portal_url);
+          apiKey = apiKey ?? str(r.content.api_key);
+          userId = userId ?? str(r.content.user_id);
+          if (!portalUrl || !apiKey || !userId) {
+            return fail("Setup incomplete: portal url, api key and user id are all required.");
+          }
+        }
+
+        // ── Decide whether to set up GitHub version control ─────────────────
+        let doGithub: boolean;
+        if (args.setup_github === false) doGithub = false;
+        else if (args.setup_github === true || args.vc_dir || args.vc_remote_url) doGithub = true;
+        else if (canElicit) {
+          const r = await elicitForm(
+            "Set up GitHub version control? Every content change is mirrored to a git repo you can roll back.",
+            { setup_github: { type: "boolean", title: "Set up GitHub version control?" } },
+            ["setup_github"]
+          );
+          if (r.status === "cancelled") return cancelled("Setup was cancelled; nothing was written.");
+          doGithub = r.status === "accept" && r.content.setup_github === true;
+        } else doGithub = false;
+
+        // ── GitHub fields (when enabled) ────────────────────────────────────
+        let vcDir = args.vc_dir?.trim();
+        let vcRemote = args.vc_remote_url?.trim();
+        let vcToken = args.vc_token?.trim();
+        let vcUsername = args.vc_username?.trim();
+        let vcPush = args.vc_push;
+        if (doGithub && (!vcDir || !vcRemote || !vcToken)) {
+          if (!canElicit) {
+            const missing = [!vcDir && "vc_dir", !vcRemote && "vc_remote_url", !vcToken && "vc_token"]
+              .filter(Boolean)
+              .join(", ");
+            return fail(
+              `GitHub setup needs ${missing}, but this client can't prompt (no elicitation). Pass them as ` +
+                `arguments, or set setup_github=false. Nothing was written.`
+            );
+          }
+          const props: Record<string, unknown> = {};
+          const req: string[] = [];
+          if (!vcDir) {
+            props.vc_dir = { type: "string", title: "Local repo path", description: "A git repo on disk to mirror every content change into." };
+            req.push("vc_dir");
+          }
+          if (!vcRemote) {
+            props.vc_remote_url = { type: "string", title: "GitHub repo URL", format: "uri", description: "e.g. https://github.com/you/portal-state.git" };
+            req.push("vc_remote_url");
+          }
+          if (!vcToken) {
+            props.vc_token = { type: "string", title: "GitHub token (PAT)", description: "Personal access token with repo push access. Stored locally (gitignored); never logged." };
+            req.push("vc_token");
+          }
+          if (vcUsername === undefined) {
+            props.vc_username = { type: "string", title: "HTTPS username (optional)", description: "Default x-access-token; leave blank unless your host needs a specific user." };
+          }
+          if (vcPush === undefined) {
+            props.vc_push = { type: "boolean", title: "Push after each commit?", description: "Mirror commits up to the remote automatically." };
+          }
+          const r = await elicitForm("GitHub version-control details. The token is stored locally and never logged.", props, req);
+          if (r.status !== "accept") return cancelled("GitHub setup was cancelled; nothing was written.");
+          vcDir = vcDir ?? str(r.content.vc_dir);
+          vcRemote = vcRemote ?? str(r.content.vc_remote_url);
+          vcToken = vcToken ?? str(r.content.vc_token);
+          if (vcUsername === undefined && r.content.vc_username) vcUsername = str(r.content.vc_username);
+          if (vcPush === undefined && r.content.vc_push !== undefined) vcPush = Boolean(r.content.vc_push);
+        }
+
+        // ── Validate the GitHub token/repo (before writing; purely informational) ──
+        let github: Record<string, unknown> | undefined;
+        if (doGithub && args.validate_github !== false && vcRemote && vcToken) {
+          const v = await validateGithubAccess({
+            remoteUrl: vcRemote,
+            token: vcToken,
+            timeoutMs: loadNetworkConfig().timeoutMs,
+          });
+          github = { ok: v.ok, checked: v.checked, login: v.login, repo: v.repoFullName, can_push: v.canPush, note: v.reason };
+        }
+
+        // ── Build + write the project config ────────────────────────────────
+        const config: Record<string, unknown> = {
+          portal: { url: portalUrl!.replace(/\/$/, ""), apiKey, userId },
+        };
+        if (doGithub && vcDir) {
+          const vc: Record<string, unknown> = { dir: vcDir };
+          vc.push = vcPush === undefined ? Boolean(vcRemote) : vcPush;
+          if (vcRemote) vc.remote_url = vcRemote;
+          if (vcToken) vc.token = vcToken;
+          if (vcUsername) vc.username = vcUsername;
+          config.vc = vc;
+        }
+
+        const dir = path.dirname(target);
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(target, JSON.stringify(config, null, 2) + "\n");
+        const ignore = path.join(dir, ".gitignore");
+        if (!fs.existsSync(ignore)) {
+          fs.writeFileSync(ignore, "# Local portal credentials — never commit.\nconfig.json\n");
+        }
+        resetConfigCache();
+        resetSession();
+
+        // ── Validate portal credentials with a live login ───────────────────
+        const result: Record<string, unknown> = {
+          written: target,
+          gitignore: ignore,
+          vc_configured: Boolean(config.vc),
+          github,
+          note: "Secrets stored locally and gitignored; not echoed here.",
+        };
+        if (args.validate !== false) {
+          try {
+            const me = (await request("GET", "/auth/me")) as Record<string, unknown> | null;
+            result.validated = true;
+            result.signed_in_as = me ? { id: me.id ?? me.user_id, email: me.email, username: me.username } : null;
+          } catch (e) {
+            result.validated = false;
+            result.validation_error = (e as Error).message;
+            result.hint = "Config was written, but the portal login failed. Re-check portal url / api key / user id.";
+          }
+        }
+        return ok(result);
+      } catch (e) {
+        const msg = (e as Error)?.message ?? String(e);
+        // Client claimed elicitation but the SDK rejected the specific form mode — degrade kindly.
+        if (/does not support/i.test(msg) && /elicit/i.test(msg)) {
+          return fail(
+            "This MCP client doesn't support interactive prompts (elicitation). Pass the fields as arguments " +
+              "to setup_portal, or use init_project_config. Nothing was written."
+          );
+        }
+        return fail(msg);
+      }
+    }
+  );
 }
 
 function registerVcTools(server: McpServer): void {
@@ -2345,8 +2690,8 @@ function registerVcTools(server: McpServer): void {
       title: "Snapshot portal content to git",
       description:
         "Export every content resource (blocks + layouts/queries/themes/partials/snippets/" +
-        "translations/dashboards/tags) to the version-control repo and commit. Run once to seed " +
-        "history, or anytime to capture a checkpoint. Requires PORTAL_VC_DIR.",
+        "translations/dashboards/tags) AND datasources to the version-control repo and commit. Run once " +
+        "to seed history, or anytime to capture a checkpoint. Requires PORTAL_VC_DIR.",
       inputSchema: {
         message: z.string().optional().describe("Commit message (default: 'snapshot')."),
       },
@@ -2360,7 +2705,10 @@ function registerVcTools(server: McpServer): void {
         const counts: Record<string, number> = {};
         for (const key of RESOURCE_KEYS) {
           const desc = getDescriptor(key);
-          if (!desc || desc.domain !== "content" || !desc.verbs.list) continue;
+          // Mirror content resources + datasources (the data model). Admin resources
+          // (users/groups/credentials) are NEVER snapshotted — they can carry secrets.
+          if (!desc || !desc.verbs.list) continue;
+          if (desc.domain !== "content" && desc.key !== "datasource") continue;
           let list: unknown;
           try {
             list = await listResource(desc);
@@ -2672,8 +3020,9 @@ function registerPrompts(server: McpServer): void {
     {
       title: "Set up this project's Zuar Portal",
       description:
-        "Guided first-time setup: collect the portal URL, API key and user ID for THIS folder, " +
-        "optionally a version-control repo, then write ./.zuar-portal/config.json and verify the login.",
+        "Guided first-time setup via the setup_portal tool: prompt for the portal URL, API key and user ID " +
+        "for THIS folder, optionally a GitHub version-control repo, then write ./.zuar-portal/config.json " +
+        "and verify both the portal login and the GitHub token/repo.",
       argsSchema: {},
     },
     () => {
@@ -2683,15 +3032,17 @@ function registerPrompts(server: McpServer): void {
         "",
         "1. First call active_config to see whether this folder is already configured and which portal " +
           "is in effect. If it's already pointed at the right portal, stop and tell me.",
-        "2. If not, ask me for (a) the Portal URL (e.g. https://your-portal.zuarbase.net), (b) the API key " +
-          "(Admin → Auth → API Keys), and (c) my user ID / UUID (Admin → Users — it's in the URL). Ask one " +
-          "concise message; don't lecture.",
-        "3. Ask whether I want version control (a git repo that mirrors every content write so changes can " +
-          "be reverted). If yes, collect the repo path and, optionally, a remote URL + token for push.",
-        "4. Call init_project_config with those values (validate defaults on). It writes the config + a " +
-          ".gitignore and does a live login check.",
-        "5. Report the result: confirm who I'm signed in as and that version control is on/off. If validation " +
-          "failed, tell me which field to fix. Never print the API key or token back to me.",
+        "2. If not, call setup_portal with NO arguments. When the client supports it, that tool prompts me " +
+          "directly (via elicitation) for the portal URL, API key and user ID, asks whether I want GitHub " +
+          "version control, validates the portal login AND the GitHub token/repo, and writes the config — " +
+          "you don't need to collect or echo any of those values yourself.",
+        "3. If setup_portal reports that this client can't prompt (no elicitation), fall back: ask me for " +
+          "(a) the Portal URL (e.g. https://your-portal.zuarbase.net), (b) the API key (Admin → Auth → API " +
+          "Keys), and (c) my user ID / UUID (Admin → Users — it's in the URL) in one concise message, plus " +
+          "whether I want a version-control repo (path + optional remote URL & token), then pass them to " +
+          "setup_portal (or init_project_config) as arguments.",
+        "4. Report the result: confirm who I'm signed in as, whether version control is on, and the GitHub " +
+          "validation outcome. If anything failed, tell me which field to fix. Never print the API key or token back to me.",
       ].join("\n");
       return { messages: [{ role: "user", content: { type: "text", text } }] };
     }

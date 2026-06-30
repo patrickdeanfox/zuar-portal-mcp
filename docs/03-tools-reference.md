@@ -30,6 +30,8 @@ all non-read tools.
 | `get_me` | 🟢 | The authenticated user's profile (`/auth/me`). No args. |
 | `get_config` | 🟢 | The portal config document. No args. |
 | `get_rules` | 🟢 | Active authoring rules: per-rule severities + the conventions text. No args. See [05](05-authoring-rules.md). |
+| `suggest_name` `[2.7.0]` | 🟢 | `kind`, `scope?`, `subject?`, `qualifier?`, `source?` `[2.8.0]` → a convention display name + slug + facet tags. Resource kinds (datasource/query/page/…) drop the kind word; `source` adds a data-asset facet (sample/live/telemetry/curated/reference). See [17](17-naming-convention.md). |
+| `parse_name` `[2.7.0]` | 🟢 | `name` → `{scope, kind, subject, slug, conforms}`. Grade or audit an existing name. See [17](17-naming-convention.md). |
 | `describe_resource` | 🟢 | `resource?` → fields, required-to-create, verbs, risk domain for one resource; omit `resource` to list every resource type. Call before create/update_resource. |
 | `get_capabilities` `[2.5.0]` | 🟢 | Reports enabled tool groups/tools, write-safety posture, config source, and version-control + audit status. **Always available** — survives tool gating. Secrets redacted. No args. |
 
@@ -43,9 +45,12 @@ Resolve and write the per-project portal/VC config — see
 |------|-----|--------|-------|
 | `active_config` | 🟢 | — | Resolved project config path, active portal URL + user, and VC status. **All secrets redacted.** |
 | `init_project_config` | 🟢¹ | `portal_url`, `api_key`, `user_id` (required); `vc_dir?`, `vc_push?`, `vc_remote?`, `vc_remote_url?`, `vc_token?`, `vc_username?`; `overwrite?` (default false), `validate?` (default true) | Writes `./.zuar-portal/config.json` + a `.gitignore`, then validates the credentials via a **live login**. Refuses to overwrite an existing config unless `overwrite=true`. **Never echoes secrets.** |
+| `setup_portal` | 🟢¹ | all of the above, **all optional**; plus `setup_github?`, `validate_github?` (default true) | **Guided** variant of `init_project_config`. PROMPTS for any missing field via MCP **elicitation** (portal creds, then an optional GitHub VC repo), validates the portal with a live login **and** the GitHub token/repo against the GitHub API, then writes the config. Falls back to an actionable message when the client can't elicit (pass the fields as args). **Never echoes secrets.** |
 
-> ¹ `init_project_config` is a **local setup** write — it creates a file on disk, not a portal change,
-> so it isn't gated by the content/data/admin domains (and runs under `PORTAL_READONLY` too).
+> ¹ `init_project_config` / `setup_portal` are **local setup** writes — they create a file on disk, not a
+> portal change, so they aren't gated by the content/data/admin domains (and run under `PORTAL_READONLY` too).
+> Elicitation requires the connected MCP client to advertise the capability; otherwise `setup_portal` degrades
+> to argument-only operation.
 
 ---
 
@@ -60,11 +65,11 @@ Operate over the 17 resource types (layouts, queries, themes, datasources, users
 | `create_resource` | 🔵/🟠/🔴 | `resource`, `body` | Domain = the resource's domain. Unknown body fields dropped. **Structure + reference checked before write `[2.6.0]`.** |
 | `update_resource` | 🔵/🟠/🔴 | `resource`, `id`, `body` | PUT is full-replace; the server fetches + merges your fields over the current record so untouched fields survive. Refuses to demote/remove the last admin or your own account (user resource) `[2.6.0]`. |
 | `delete_resource` | 🔵/🟠/🔴 | `resource`, `id`, **`confirm`**, `force?` | Requires `confirm:true` `[2.5.0]`. Refuses to orphan dependents — pass `force:true` to override — and to remove the last admin / your own account `[2.6.0]`. Cannot be undone on the portal (but VC keeps the last committed copy `[2.2.0]`). |
-| `validate_portal` | 🟢 | `limit?` | **Read-only integrity sweep `[2.6.0]`** — reports malformed records, dangling references and unscoped mass-write SQL across the whole portal. Fixes nothing. See [16 · Safety & Integrity Gates](16-safety-and-integrity.md). |
+| `validate_portal` | 🟢 | `limit?` | **Read-only integrity sweep `[2.6.0]`** — reports malformed records, dangling references, unscoped mass-write SQL, and **datasource hygiene `[2.8.0]`** (a name leaking a connection-string/password → `secret_in_name`; a datasource reporting a broken connection → `datasource_error`) across the whole portal. Fixes nothing. See [16 · Safety & Integrity Gates](16-safety-and-integrity.md). |
 
-> Content-domain creates/updates/deletes are auto-committed to version control `[2.2.0]`.
-> Every content write also passes a structural + referential safety gate `[2.6.0]` — see
-> [doc 15](15-structural-integrity.md) and [doc 16](16-safety-and-integrity.md).
+> Content-domain creates/updates/deletes — **and datasources `[2.8.0]`** — are auto-committed to
+> version control `[2.2.0]`. Every content write also passes a structural + referential safety gate
+> `[2.6.0]` — see [doc 15](15-structural-integrity.md) and [doc 16](16-safety-and-integrity.md).
 
 **Example — create a saved query (SELECT \* over a datasource):**
 ```json
@@ -72,6 +77,22 @@ create_resource { "resource": "query", "body": {
   "name": "Sales — all rows",
   "datasources": [{ "id": "<datasource-uuid>", "alias": "datasource" }],
   "sql_form": { "columns": ["*"] }
+}}
+```
+
+**Example — a modeled / joined query (the semantic layer):** a query can reference **multiple**
+datasources by alias and join them in `raw_sql`. The portal injects each as a CTE, so `raw_sql` must be
+a single SELECT with **no leading `WITH`** (use derived subqueries to pre-aggregate). See
+[18 · Data Modeling](18-data-modeling.md).
+```json
+create_resource { "resource": "query", "body": {
+  "name": "DW · Sales by Category",
+  "datasources": [
+    { "id": "<fact_sales_order_line-uuid>", "alias": "sol" },
+    { "id": "<dim_product-uuid>", "alias": "p" }
+  ],
+  "raw_sql": "SELECT p.category, sum(sol.quantity*sol.unit_price) AS net_revenue FROM sol JOIN p ON sol.product_id=p.product_id GROUP BY 1 ORDER BY net_revenue DESC",
+  "default_params": []
 }}
 ```
 
@@ -146,7 +167,7 @@ Enabled by `PORTAL_VC_DIR`. See [07 · Version Control](07-version-control.md).
 | Tool | Dom | Params | Notes |
 |------|-----|--------|-------|
 | `vc_status` | 🟢 | — | Is VC on, repo path, push config. |
-| `snapshot_portal` | 🔵 | `message?` | Export **all content** (blocks + layouts/queries/themes/partials/snippets/translations/dashboards/tags) to the repo and commit. Run once to seed; anytime to checkpoint. |
+| `snapshot_portal` | 🔵 | `message?` | Export **all content** (blocks + layouts/queries/themes/partials/snippets/translations/dashboards/tags) **and datasources `[2.8.0]`** to the repo and commit. Run once to seed; anytime to checkpoint. (Admin resources — users/groups/credentials — are never snapshotted; they can carry secrets.) |
 | `vc_log` | 🟢 | `resource?`, `id?`, `limit?` | Recent commits, optionally for one record. Returns hashes for `restore_resource`. |
 | `restore_resource` | 🔵 | `resource` (`block` or a content key), `id`, `ref?` | Revert a record to a prior committed version and write it back. Omit `ref` = undo the last change to that record. The restore is itself committed. |
 

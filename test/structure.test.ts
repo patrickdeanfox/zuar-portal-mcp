@@ -5,7 +5,7 @@
  * written to the portal DB. The regression it exists to prevent: a layout with a
  * grid that has `blocks`/`block_layouts` but NO `layouts.{lg,md,sm}`, which makes
  * the portal throw `grid.layouts is undefined` while building the page list and
- * makes EVERY page disappear (patrick-portal, 2026-06-29). These tests pin both
+ * makes EVERY page disappear (observed on a live portal, 2026-06-29). These tests pin both
  * the auto-repair behaviour and the hard-reject behaviour.
  */
 
@@ -21,7 +21,7 @@ function gridLayoutsValid(jsonData: any): boolean {
 }
 
 test("THE regression: a grid with blocks but no layouts is auto-repaired, not written broken", () => {
-  // Exactly the malformed shape that crashed patrick-portal.
+  // Exactly the malformed shape that crashed a live portal.
   const body = {
     name: "MCP Showcase",
     json_data: {

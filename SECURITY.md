@@ -55,11 +55,24 @@ additionally requires `confirm: true` on each call.
   for MCP JSON-RPC framing). `active_config` / `get_capabilities` report config with
   all secrets redacted.
 - The portal base URL is validated as a well-formed `http(s)` origin before use.
+- **Guided setup (`setup_portal`).** When the client supports it, this tool **elicits**
+  the portal credentials and an optional GitHub PAT interactively. The MCP spec
+  discourages eliciting secrets; this is a deliberate, scoped exception for a
+  **local, single-operator** server: the values are written only to the gitignored
+  `config.json`, are never logged, and are never echoed back. Validation results
+  surface only non-secret facts (signed-in user; GitHub login / repo / push
+  permission) — never the token itself. On clients without elicitation the tool
+  degrades to argument-only operation.
 
 ## Network egress
 
-The server makes outbound HTTPS calls **only** to the configured portal URL
-(`/auth/*` and `/api/*`). It opens no inbound listener and contacts no third party.
+The server makes outbound HTTPS calls to the configured portal URL (`/auth/*` and
+`/api/*`). The **one** exception is `setup_portal`'s opt-in GitHub validation: when
+you provide a GitHub repo URL **and** a token, it calls that host's GitHub API
+(`api.github.com`, or `<host>/api/v3` for GitHub Enterprise) to verify the token and
+repo — `GET /user` and `GET /repos/{owner}/{repo}`, token in the `Authorization`
+header only. Skip it with `validate_github=false`. The server opens no inbound
+listener and contacts no other third party.
 
 ## Input & output hardening
 

@@ -31,9 +31,16 @@ also exposed as the `zportal://guide/conventions` resource).
 | `require_query_binding` | warn | reads `queryResults`/`getQueryData` but has no bound `ui_queries` → renders empty/fallback |
 | `no_amcharts_loader` | warn | the `AMCHARTS_LOADER` two-block pattern — load via `zPortal.resources.load` instead |
 | `enforce_theme_vars` | warn | hardcoded hex colors with no `var(--…)` theme variable |
+| `naming_css_scope` `[2.7.0]` | warn | global CSS leaking out of a block — `:root{}`, `*`, bare `body`/`html` — clobbers sibling blocks. See [17](17-naming-convention.md) |
+| `naming_block_name` `[2.7.0]` | **off** | block name doesn't match the `SCOPE · Kind Subject` convention. Project-specific — opt in via `rules.json`. Use `suggest_name` to generate one |
 
 > Structure/safety rules default to **error**; style/footgun rules default to **warn**. `no_raw_dollar`
-> is the one footgun that defaults to **error** because it silently kills the entire block.
+> is the one footgun that defaults to **error** because it silently kills the entire block. The
+> `naming_*` rules are new in `[2.7.0]`: `naming_css_scope` is universally-good hygiene (warn),
+> `naming_block_name` is project-specific (off by default).
+>
+> **Metadata-only updates `[2.7.0]`:** `update_block` now validates only the fields you change, so a
+> rename/retag is never blocked by a pre-existing violation (e.g. a legacy `$`) in untouched content.
 
 ## Why `no_raw_dollar` exists
 During an 8-page dashboard build, three "money" blocks (`'$'+value`) rendered completely blank with

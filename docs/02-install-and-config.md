@@ -60,12 +60,26 @@ optional `vc` (version-control) section — so each folder gets its own portal *
 ```
 
 **Guided setup** — you don't have to hand-write the file:
-- **`init_project_config`** writes `./.zuar-portal/config.json` (plus a `.zuar-portal/.gitignore` that
-  ignores `config.json`), then **validates the credentials with a live login**. It **refuses to
-  overwrite** an existing config unless `overwrite=true`.
+- **`setup_portal`** `[2.8.0]` is the **interactive** path. Call it with **no arguments** and — when your
+  MCP client supports **elicitation** — it **prompts you field-by-field**: portal URL → API key → user ID,
+  then asks whether you want GitHub version control and (if yes) collects the repo URL, PAT, and local
+  mirror path. It then validates **both** the portal (live login) **and** the GitHub token/repo (against
+  the GitHub API), and writes the same `./.zuar-portal/config.json`. Any field you pass as an argument
+  skips its prompt. If the client can't elicit, it falls back with a clear message — pass the fields as
+  arguments instead (or use `init_project_config`). **Secrets are never echoed or logged.**
+- **`init_project_config`** is the **arguments-only** path: pass `portal_url` / `api_key` / `user_id`
+  (plus optional `vc_*`) up front. It writes `./.zuar-portal/config.json` (plus a `.zuar-portal/.gitignore`
+  that ignores `config.json`), then **validates the credentials with a live login**. Both tools **refuse
+  to overwrite** an existing config unless `overwrite=true`.
 - **`active_config`** reports which config / portal / repo is currently in effect (secrets redacted).
-- The **`setup_zuar_project`** MCP prompt walks you through it conversationally. In Claude Code, just
-  run **`/portal-setup`**.
+- The **`setup_zuar_project`** MCP prompt walks you through it conversationally (it now routes to
+  `setup_portal`). In Claude Code, just run **`/portal-setup`**.
+
+> **Elicitation support.** The interactive prompts only appear if the connected client advertises the
+> `elicitation` capability; `setup_portal` detects this and degrades to argument-only operation otherwise.
+> The MCP spec discourages eliciting secrets, so this is a deliberate local-only convenience: the file is
+> gitignored, values are never logged, and validation results carry only the GitHub login / repo / push
+> permission — never the token.
 
 **Security.** `.zuar-portal/` and `config.json` are gitignored at the repo root; secrets are never
 logged or echoed.
@@ -120,7 +134,7 @@ are enabled, the posture, and audit status.
 | `users` | `get_user_groups`, `set_user_groups`, `get_user_permissions`, `set_user_permissions`, `change_password`, `update_me` |
 | `config` | `get_config`, `update_config` |
 | `vc` | `vc_status`, `snapshot_portal`, `vc_log`, `restore_resource` |
-| `setup` | `active_config`, `init_project_config` |
+| `setup` | `active_config`, `init_project_config`, `setup_portal` |
 
 > `get_capabilities` sits outside the groups and is **always available** — it can't be gated off by group.
 
@@ -200,9 +214,14 @@ remote + a token in the `vc` section and the server wires up the authenticated r
 The token is applied as a git auth header in the repo's local config, **never logged**; `config.json`
 is gitignored. If `token` is omitted, the server uses the machine's existing git auth.
 
+> **Tip `[2.8.0]`:** `setup_portal` writes this `vc` section for you and **validates the GitHub token + repo
+> against the GitHub API before the first push** — so a bad PAT or wrong repo URL fails fast at setup
+> instead of silently at commit time.
+
 Details + the revert workflow: [07 · Version Control](07-version-control.md).
 
 ## Verifying the install
+- `setup_portal` `[2.8.0]` — guided first-time setup; validates portal + GitHub creds as it writes the config.
 - `get_version` — confirms connectivity and returns portal version/about.
 - `get_me` — confirms your credentials resolve to a user.
 - `describe_resource` (no args) — lists every resource the server manages.

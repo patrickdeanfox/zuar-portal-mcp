@@ -29,6 +29,31 @@ The live portal is **v1.19** (confirm with `get_version`). A block reads `curren
 5. **Create/update the query (optional, when a chart-ready query is needed).** `create_resource resource="query"` (or `update_resource` to refine one), attaching the datasource — a query with **no datasource** can't bind. Keep the change to the `query` resource only; never write users/security/db-modifications.
 6. **Verify.** `execute_query` on the new/updated query to confirm it returns the expected aliases, types, row count, and sane numbers. If you're validating an existing binding, run the bound query and confirm its aliases match the block's column constants exactly — report any mismatch as the empty-block risk it is.
 
+## Data modeling & PostgreSQL gotchas `[2.8.0]`
+
+- **Model joins as `query` resources, not as datasources.** A datasource is a leaf (its SQL can't
+  reference another datasource). To join/aggregate across tables, create a `query` that references
+  multiple datasources by alias: `datasources: [{ id, alias }, …]` + `raw_sql` using the aliases as
+  table names. The portal injects each as a CTE (`WITH <alias> AS (SELECT * FROM (<ds sql>) …)`) and
+  wraps your SQL as `SELECT * FROM (<raw_sql>) …`, so **`raw_sql` must be a single SELECT with NO
+  leading `WITH`** — use derived subqueries for pre-aggregation. Queries are content-domain (no data
+  flag) and version-controlled. Verify with `execute_query` (cap with `limit`).
+- **PostgreSQL `date ± bigint` is unsupported** (only `date ± int`). The synthetic-data idiom
+  `CURRENT_DATE - (…::bit(32)::bigint % N)` fails at create with `operator does not exist: date - bigint`.
+  Fix: cast the modulo result to int — `… % N)::int` — AFTER the modulo (never the raw bigint, which can
+  overflow int4). Integer-literal offsets (`CURRENT_DATE - 1095`) are fine.
+- **A base datasource's `%` renders as `%%`** in the composed query SQL (format-string escaping) —
+  harmless, don't "fix" it.
+- **Naming (data profile):** name datasources/queries `SCOPE · Subject — Source`, dropping the kind word
+  (e.g. `DW · Dim Customer`, not `DW · Datasource Dim Customer`). `suggest_name` does this for resource
+  kinds and takes a `source` arg (sample/live/telemetry/curated/reference). Tag the layer
+  (`dimension`/`fact`) and warehouse (`data-warehouse`).
+- **Datasources are now version-controlled** (mirrored on write + by `snapshot_portal`).
+- **Never name a datasource after its connection string** — it leaks the password; `validate_portal`
+  flags `secret_in_name`. Rename AND rotate.
+
+See docs/18-data-modeling.md.
+
 ## Output contract
 You are a pipeline stage — your text is consumed by the orchestrator/builder, not shown raw to the user. Return:
 
