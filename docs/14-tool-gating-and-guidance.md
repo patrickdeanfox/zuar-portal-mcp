@@ -42,7 +42,8 @@ reports them as off.
 | `users` | `get_user_groups`, `set_user_groups`, `get_user_permissions`, `set_user_permissions`, `change_password`, `update_me` | Users / groups / permissions / passwords. |
 | `config` | `get_config`, `update_config` | The portal configuration document. |
 | `vc` | `vc_status`, `snapshot_portal`, `vc_log`, `restore_resource` | Git version control of content. |
-| `setup` | `active_config`, `init_project_config` | Per-project credential bootstrap. |
+| `setup` | `active_config`, `init_project_config`, `setup_portal` | Per-project credential bootstrap (`setup_portal` is the elicitation-guided variant). |
+| `design` | `design_intake` | Guided theming — elicit design prefs, synthesize + create a `theme`. |
 
 **`get_capabilities` is always-on** (its own `meta` group) and **`active_config` stays available** even
 when the `setup` group is gated off — so an operator can always *see* the posture and *fix* the

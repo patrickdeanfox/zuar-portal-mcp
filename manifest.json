@@ -77,6 +77,7 @@
     { "name": "active_config", "description": "Report which project config/portal/repo is in effect (secrets redacted)." },
     { "name": "init_project_config", "description": "Set up this folder's .zuar-portal/config.json for a specific portal (+ optional VC), then validate." },
     { "name": "setup_portal", "description": "Guided setup: prompts (via elicitation) for portal creds + optional GitHub VC, validates both, then writes .zuar-portal/config.json." },
+    { "name": "design_intake", "description": "Guided theming: prompts (via elicitation) for brand/website, colors, density, radius, header/sidebar; fetches the site (SSRF-guarded) to suggest colors; synthesizes a theme token map and, on confirm, creates a theme resource." },
     { "name": "vc_status", "description": "Report portal version-control status (PORTAL_VC_DIR)." },
     { "name": "snapshot_portal", "description": "Export all content resources to the git repo and commit." },
     { "name": "vc_log", "description": "List version-control commits, optionally for one record." },

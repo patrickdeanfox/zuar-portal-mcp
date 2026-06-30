@@ -6,7 +6,7 @@ An [MCP](https://modelcontextprotocol.io) server that lets **Claude operate your
 
 **Block writes are validated.** HTML blocks go through dedicated, validated tools (`create_block`/`update_block`). Every other resource is reached through generic resource tools. **Writes are gated by risk domain** — content edits are on by default; data (SQL) and admin (users/security) writes are opt-in (see [Write safety](#write-safety)).
 
-> **📚 Full documentation:** the complete guide lives in **[`docs/`](docs/README.md)** — overview, install & config, a reference for all 43 tools, block authoring, the authoring rules, the design system, version control, the in-block `zPortal` API, recipes, loops/automation & data exploration, the [Claude Code agent ecosystem](docs/13-agents-and-workflows.md), [tool gating & guidance](docs/14-tool-gating-and-guidance.md), and troubleshooting.
+> **📚 Full documentation:** the complete guide lives in **[`docs/`](docs/README.md)** — overview, install & config, a reference for all 44 tools, block authoring, the authoring rules, the design system, version control, the in-block `zPortal` API, recipes, loops/automation & data exploration, the [Claude Code agent ecosystem](docs/13-agents-and-workflows.md), [tool gating & guidance](docs/14-tool-gating-and-guidance.md), and troubleshooting.
 
 > **🏢 Multi-portal & multi-repo (v2.4.0):** one install can drive a **different portal + git repo per folder** via a per-project `./.zuar-portal/config.json`. And when you work in this repo from **Claude Code**, you get a whole **team of specialist agents** (build / style / debug / responsive / theme / bulk / data-expert / advisory) plus slash commands and gated workflows. See [Per-project configuration](#per-project-configuration-multiple-portals) and [Driving it from Claude Code](#driving-it-from-claude-code-the-agent-ecosystem).
 
@@ -84,6 +84,7 @@ One set of tools operates every other resource. Pass `resource` plus a `body`/`i
 | `active_config` | Report which project config / portal / VC repo is in effect (secrets redacted). | read |
 | `setup_portal` | **Guided** setup — prompts (via elicitation) for portal creds + optional GitHub VC, validates both (live login + GitHub API), then writes `./.zuar-portal/config.json`. | setup |
 | `init_project_config` | Write this folder's `./.zuar-portal/config.json` for a specific portal (+ optional VC) and validate it. | setup |
+| `design_intake` | **Guided theming** — prompts (via elicitation) for brand/website, colors, density, radius, header/sidebar; fetches the site (SSRF-guarded) to suggest colors; synthesizes a theme token map and, on confirm, creates a `theme`. | design |
 
 **Resources** — authoring guidance Claude reads before building, so blocks follow zPortal conventions even if you've never set up a zPortal skill:
 

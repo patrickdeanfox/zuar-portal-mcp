@@ -52,6 +52,12 @@ Resolve and write the per-project portal/VC config — see
 > Elicitation requires the connected MCP client to advertise the capability; otherwise `setup_portal` degrades
 > to argument-only operation.
 
+### Design (`design` group)
+
+| Tool | Dom | Params | Notes |
+|------|-----|--------|-------|
+| `design_intake` | 🟢 content | all **optional**: `website_url?`, `brand_name?`, `primary_color?`, `accent_color?`, `mode?` (light/dark), `density?` (compact/spacious), `radius?` (sharp/subtle/rounded/pill), `font?`, `header?`, `sidebar?`, `theme_name?`, `fetch_site?` (default true), `apply?` | **Guided theming.** PROMPTS for brand/colors/density/radius/header/sidebar via MCP **elicitation**; if given a `website_url` it fetches the homepage (**SSRF-guarded** — http(s) only, private/loopback hosts refused, redirects re-validated, body capped) to suggest brand colors. Synthesizes a `customProperties` token map (mapped onto the house design tokens) and, after a final confirm, **creates a `theme` resource** (content write, VC-tracked). `apply=true` skips the confirm; `apply=false` returns the spec only. Without elicitation, pass `primary_color` (+ optionals) and `apply=true`. Header/sidebar prefs are recorded in the brief (portal nav chrome is applied separately). |
+
 ---
 
 ## Generic resources (CRUD over the registry)

@@ -32,7 +32,8 @@ allowlist (`PORTAL_ENABLE_TOOLS`); write domains are gated independently.
 | `users` | get/set_user_groups, get/set_user_permissions, change_password, update_me | user/group/permission membership | user membership, passwords | `admin` | **off** |
 | `config` | get/update_config | portal config document | portal config | `admin` | **off** |
 | `vc` | vc_status, snapshot_portal, vc_log, restore_resource | local git mirror of content | local git repo (+ optional push) | `content` | **on** |
-| `setup` | active_config, init_project_config | resolved config (redacted) | local `.zuar-portal/config.json` | local file | n/a |
+| `setup` | active_config, init_project_config, setup_portal | resolved config (redacted) | local `.zuar-portal/config.json` | local file + opt-in GitHub API | n/a |
+| `design` | design_intake | themes | themes (token map) | `content` + opt-in website fetch | content |
 | `meta` | get_capabilities, get_metrics | server posture & metrics | — | — | n/a |
 
 Write domains and their gates:
@@ -67,12 +68,23 @@ additionally requires `confirm: true` on each call.
 ## Network egress
 
 The server makes outbound HTTPS calls to the configured portal URL (`/auth/*` and
-`/api/*`). The **one** exception is `setup_portal`'s opt-in GitHub validation: when
-you provide a GitHub repo URL **and** a token, it calls that host's GitHub API
-(`api.github.com`, or `<host>/api/v3` for GitHub Enterprise) to verify the token and
-repo — `GET /user` and `GET /repos/{owner}/{repo}`, token in the `Authorization`
-header only. Skip it with `validate_github=false`. The server opens no inbound
-listener and contacts no other third party.
+`/api/*`). There are **two** opt-in exceptions, both off unless you trigger them:
+
+1. **`setup_portal` GitHub validation.** When you provide a GitHub repo URL **and** a
+   token, it calls that host's GitHub API (`api.github.com`, or `<host>/api/v3` for
+   GitHub Enterprise) to verify the token and repo — `GET /user` and
+   `GET /repos/{owner}/{repo}`, token in the `Authorization` header only. Skip with
+   `validate_github=false`.
+2. **`design_intake` color suggestion.** When you provide a `website_url`, it fetches
+   that homepage to extract a starting palette. This is the only place the server
+   contacts an **arbitrary, user-named host**, so it is SSRF-hardened: http(s) only,
+   no embedded credentials, the host is DNS-resolved and **refused if any resolved
+   address is private/loopback/link-local/CGNAT/reserved**, redirects are followed
+   manually and every hop re-validated, and the body is size- and time-capped. Skip
+   with `fetch_site=false`. Residual risk: DNS-rebinding (TOCTOU) between lookup and
+   connect is not fully closed — acceptable for a local, single-operator tool.
+
+The server opens no inbound listener and contacts no other third party.
 
 ## Input & output hardening
 

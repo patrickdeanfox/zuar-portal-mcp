@@ -123,7 +123,7 @@ blocked at call time; it never registers. The tool surface is **fixed at server 
 gating needs a **restart**. `get_capabilities` is **always available** and reports which groups/tools
 are enabled, the posture, and audit status.
 
-**The 8 groups:**
+**The 9 groups:**
 
 | Group | Tools |
 |-------|-------|
@@ -135,6 +135,7 @@ are enabled, the posture, and audit status.
 | `config` | `get_config`, `update_config` |
 | `vc` | `vc_status`, `snapshot_portal`, `vc_log`, `restore_resource` |
 | `setup` | `active_config`, `init_project_config`, `setup_portal` |
+| `design` | `design_intake` |
 
 > `get_capabilities` sits outside the groups and is **always available** — it can't be gated off by group.
 

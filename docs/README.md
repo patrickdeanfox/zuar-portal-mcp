@@ -22,7 +22,7 @@ natural language.
 |---|-----|---------------------------|
 | 01 | [Overview](01-overview.md) | Understand what the server is and how it's structured |
 | 02 | [Install & Configuration](02-install-and-config.md) | Install it, set per-project (multi-portal) credentials, and tune the write-safety, tool-gating, audit, VC + design env vars |
-| 03 | [Tools Reference](03-tools-reference.md) | Look up any of the 43 tools — params, risk domain, examples |
+| 03 | [Tools Reference](03-tools-reference.md) | Look up any of the 44 tools — params, risk domain, examples |
 | 04 | [Authoring Blocks](04-authoring-blocks.md) | Build HTML blocks: data binding, `queryResults`, the safe build flow |
 | 05 | [Authoring Rules](05-authoring-rules.md) | Know what `create_block`/`update_block` enforce, and configure it |
 | 06 | [Design System](06-design-system.md) | Give every block one house look via `design.md` (+ design skills) |

@@ -72,6 +72,8 @@ import {
 } from "./safety.js";
 import { normalizeAndValidateForWrite } from "./structure.js";
 import { validateGithubAccess } from "./github.js";
+import { fetchSiteColors } from "./website.js";
+import { synthesizeTheme, type DesignPrefs } from "./theme.js";
 import {
   DESCRIPTORS,
   RESOURCE_KEYS,
@@ -570,6 +572,8 @@ const TOOL_GROUPS: Record<string, string> = {
   vc_status: "vc", snapshot_portal: "vc", vc_log: "vc", restore_resource: "vc",
   // setup (per-project credential bootstrap)
   active_config: "setup", init_project_config: "setup", setup_portal: "setup",
+  // design (guided theming)
+  design_intake: "design",
   // meta (always-available introspection)
   get_capabilities: "meta", get_metrics: "meta",
 };
@@ -696,6 +700,7 @@ export function buildServer(): McpServer {
   registerResourceTools(server);
   registerActionTools(server);
   registerConfigTools(server);
+  registerDesignTools(server);
   registerVcTools(server);
   registerResources(server);
   registerPrompts(server);
@@ -2652,6 +2657,235 @@ function registerConfigTools(server: McpServer): void {
           return fail(
             "This MCP client doesn't support interactive prompts (elicitation). Pass the fields as arguments " +
               "to setup_portal, or use init_project_config. Nothing was written."
+          );
+        }
+        return fail(msg);
+      }
+    }
+  );
+}
+
+// ── Design tools (guided theming) ─────────────────────────────────────────────
+function registerDesignTools(server: McpServer): void {
+  server.registerTool(
+    "design_intake",
+    {
+      title: "Guided theme design intake",
+      description:
+        "Interactive design intake. Asks (via MCP elicitation, when the client supports it) for your " +
+        "brand/website, primary + accent color, light/dark, compact vs spacious density, corner radius, " +
+        "font feel, and header/sidebar preferences — then synthesizes a portal theme token map and, after a " +
+        "final confirm, creates a `theme` resource. Give a website URL and it fetches the homepage " +
+        "(SSRF-guarded) to suggest brand colors. Every field is also an argument (skips its prompt), so it " +
+        "works headlessly; on a client without elicitation, pass primary_color (+ optionals) and apply=true. " +
+        "Creating the theme is a content write (VC-tracked).",
+      inputSchema: {
+        website_url: z.string().optional().describe("Brand/website URL; fetched (SSRF-guarded) to suggest colors."),
+        brand_name: z.string().optional().describe("Brand name; used to name the theme."),
+        primary_color: z.string().optional().describe("Primary brand color (hex, e.g. #1f6feb)."),
+        accent_color: z.string().optional().describe("Accent/secondary color (hex); derived from primary if omitted."),
+        mode: z.enum(["light", "dark"]).optional().describe("Light or dark base."),
+        density: z.enum(["compact", "spacious"]).optional().describe("Spacing density."),
+        radius: z.enum(["sharp", "subtle", "rounded", "pill"]).optional().describe("Corner-radius style."),
+        font: z.enum(["system", "geometric", "humanist", "rounded", "serif", "mono"]).optional().describe("Typeface feel."),
+        header: z.enum(["minimal", "standard", "prominent", "none"]).optional().describe("Header preference (recorded in the brief)."),
+        sidebar: z.enum(["none", "collapsible", "fixed"]).optional().describe("Sidebar preference (recorded in the brief)."),
+        theme_name: z.string().optional().describe("Name for the created theme (defaults to '<Brand> <Light/Dark>')."),
+        fetch_site: z.boolean().optional().describe("Fetch the website to suggest colors (default true)."),
+        apply: z.boolean().optional().describe("true = create without confirming; false = return the spec only; omitted = confirm via prompt."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async (args) => {
+      try {
+        const caps = server.server.getClientCapabilities() as { elicitation?: unknown } | undefined;
+        const canElicit = Boolean(caps && caps.elicitation);
+
+        type Round =
+          | { status: "accept"; content: Record<string, unknown> }
+          | { status: "declined" }
+          | { status: "cancelled" };
+        async function elicitForm(message: string, properties: Record<string, unknown>, required: string[]): Promise<Round> {
+          const res = await server.server.elicitInput({
+            message,
+            requestedSchema: { type: "object", properties: properties as Record<string, never>, required },
+          });
+          if (res.action === "accept") return { status: "accept", content: (res.content ?? {}) as Record<string, unknown> };
+          if (res.action === "decline") return { status: "declined" };
+          return { status: "cancelled" };
+        }
+        const cancelled = (note: string) => ok({ cancelled: true, applied: false, note });
+        const str = (v: unknown): string => String(v ?? "").trim();
+        const enumProp = (title: string, values: string[], names: string[], def?: string, description?: string) => {
+          const p: Record<string, unknown> = { type: "string", title, enum: values, enumNames: names };
+          if (def !== undefined) p.default = def;
+          if (description) p.description = description;
+          return p;
+        };
+
+        let websiteUrl = args.website_url?.trim() || undefined;
+        let brandName = args.brand_name?.trim() || undefined;
+        let primary = args.primary_color?.trim() || undefined;
+        let accent = args.accent_color?.trim() || undefined;
+        let mode = args.mode as DesignPrefs["mode"] | undefined;
+        let density = args.density as DesignPrefs["density"] | undefined;
+        let radius = args.radius as DesignPrefs["radius"] | undefined;
+        let font = args.font as DesignPrefs["font"] | undefined;
+        let header = args.header as string | undefined;
+        let sidebar = args.sidebar as string | undefined;
+
+        // 1. Brand round.
+        if (canElicit && (args.website_url === undefined || args.brand_name === undefined)) {
+          const props: Record<string, unknown> = {};
+          if (args.website_url === undefined) {
+            props.website_url = { type: "string", format: "uri", title: "Your website / brand URL", description: "We'll fetch it (privately) to suggest brand colors. Leave blank to skip." };
+          }
+          if (args.brand_name === undefined) {
+            props.brand_name = { type: "string", title: "Brand name (optional)", description: "Used to name the theme." };
+          }
+          const r = await elicitForm("Let's design your portal theme — starting with your brand.", props, []);
+          if (r.status === "cancelled") return cancelled("Design intake cancelled; nothing was created.");
+          if (r.status === "accept") {
+            if (args.website_url === undefined) websiteUrl = str(r.content.website_url) || undefined;
+            if (args.brand_name === undefined) brandName = str(r.content.brand_name) || undefined;
+          }
+        }
+
+        // 2. Fetch the site for color suggestions (SSRF-guarded; best-effort).
+        let site: Awaited<ReturnType<typeof fetchSiteColors>> | undefined;
+        let suggested: string[] = [];
+        if (websiteUrl && args.fetch_site !== false) {
+          site = await fetchSiteColors(websiteUrl, { timeoutMs: Math.min(loadNetworkConfig().timeoutMs, 12_000) });
+          if (site.ok && site.brand) suggested = site.brand.candidates;
+        }
+        const withSuggest = (base: string) =>
+          suggested.length ? `${base} Suggested from your site: ${suggested.slice(0, 4).join(", ")}.` : base;
+
+        if (canElicit) {
+          // 3. Color round.
+          if (primary === undefined || accent === undefined || mode === undefined) {
+            const props: Record<string, unknown> = {};
+            const req: string[] = [];
+            if (primary === undefined) {
+              const p: Record<string, unknown> = { type: "string", title: "Primary color (hex)", description: withSuggest("Your main brand color, e.g. #1f6feb.") };
+              if (suggested[0]) p.default = suggested[0];
+              props.primary_color = p;
+              req.push("primary_color");
+            }
+            if (accent === undefined) {
+              const p: Record<string, unknown> = { type: "string", title: "Accent color (hex, optional)", description: withSuggest("Secondary/accent color; leave blank to derive one.") };
+              if (suggested[1]) p.default = suggested[1];
+              props.accent_color = p;
+            }
+            if (mode === undefined) props.mode = enumProp("Light or dark base?", ["light", "dark"], ["Light", "Dark"], "light");
+            const r = await elicitForm(site && !site.ok ? `Colors. (Couldn't read your site: ${site.reason})` : "Colors.", props, req);
+            if (r.status !== "accept") return cancelled("Design intake cancelled; nothing was created.");
+            if (primary === undefined) primary = str(r.content.primary_color) || undefined;
+            if (accent === undefined && r.content.accent_color) accent = str(r.content.accent_color) || undefined;
+            if (mode === undefined) mode = (r.content.mode as DesignPrefs["mode"]) ?? "light";
+          }
+
+          // 4. Feel round.
+          if (density === undefined || radius === undefined || font === undefined) {
+            const props: Record<string, unknown> = {};
+            if (density === undefined) props.density = enumProp("Compact or spacious?", ["compact", "spacious"], ["Compact", "Spacious"], "spacious");
+            if (radius === undefined) props.radius = enumProp("Corner style?", ["sharp", "subtle", "rounded", "pill"], ["Sharp", "Subtle", "Rounded", "Pill"], "rounded");
+            if (font === undefined) props.font = enumProp("Typeface feel?", ["system", "geometric", "humanist", "rounded", "serif", "mono"], ["System", "Geometric", "Humanist", "Rounded", "Serif", "Mono"], "humanist");
+            const r = await elicitForm("Look & feel.", props, []);
+            if (r.status === "cancelled") return cancelled("Design intake cancelled; nothing was created.");
+            if (r.status === "accept") {
+              if (density === undefined) density = r.content.density as DesignPrefs["density"];
+              if (radius === undefined) radius = r.content.radius as DesignPrefs["radius"];
+              if (font === undefined) font = r.content.font as DesignPrefs["font"];
+            }
+          }
+
+          // 5. Layout round (recorded in the brief; nav chrome is applied separately).
+          if (header === undefined || sidebar === undefined) {
+            const props: Record<string, unknown> = {};
+            if (header === undefined) props.header = enumProp("Header style?", ["minimal", "standard", "prominent", "none"], ["Minimal", "Standard", "Prominent", "None"], "standard");
+            if (sidebar === undefined) props.sidebar = enumProp("Sidebar?", ["none", "collapsible", "fixed"], ["None", "Collapsible", "Fixed"], "collapsible");
+            const r = await elicitForm("Page chrome (recorded as preferences; nav layout is applied separately).", props, []);
+            if (r.status === "cancelled") return cancelled("Design intake cancelled; nothing was created.");
+            if (r.status === "accept") {
+              if (header === undefined && r.content.header) header = str(r.content.header);
+              if (sidebar === undefined && r.content.sidebar) sidebar = str(r.content.sidebar);
+            }
+          }
+        }
+
+        // Primary is mandatory; default the rest.
+        if (!primary) {
+          return fail(
+            "No primary color. This client can't prompt (no elicitation), so pass at least primary_color (hex) " +
+              "— plus optional accent_color / mode / density / radius / font / brand_name / website_url — and " +
+              "apply=true to create the theme headlessly. Nothing was created."
+          );
+        }
+        mode ??= "light";
+        density ??= "spacious";
+        radius ??= "rounded";
+        font ??= "humanist";
+
+        const prefs: DesignPrefs = { brandName, websiteUrl, primary, accent, mode, density, radius, font, header, sidebar };
+        const theme = synthesizeTheme(prefs);
+        let themeName = args.theme_name?.trim() || theme.name;
+
+        const brief = {
+          brand: { name: brandName ?? null, website: websiteUrl ?? null },
+          site_colors: site
+            ? { ok: site.ok, fetched: site.fetchedUrl ?? null, theme_color: site.brand?.themeColor ?? null, candidates: suggested, reason: site.reason ?? null }
+            : null,
+          choices: { primary, accent: accent ?? "(derived)", mode, density, radius, font, header: header ?? null, sidebar: sidebar ?? null },
+          notes: theme.notes,
+        };
+
+        // Apply decision: explicit arg wins; else confirm via elicitation; else spec-only.
+        let doApply: boolean;
+        if (args.apply === true) doApply = true;
+        else if (args.apply === false) doApply = false;
+        else if (canElicit) {
+          const r = await elicitForm(
+            `Create the theme "${themeName}"? Primary ${primary}, ${mode} mode, ${density}, ${radius} corners.`,
+            {
+              confirm: { type: "boolean", title: "Create this theme now?", default: true },
+              theme_name: { type: "string", title: "Theme name", default: themeName },
+            },
+            ["confirm"]
+          );
+          if (r.status === "cancelled") return cancelled("Design intake cancelled; nothing was created.");
+          doApply = r.status === "accept" && r.content.confirm === true;
+          if (r.status === "accept" && str(r.content.theme_name)) themeName = str(r.content.theme_name);
+        } else {
+          doApply = false;
+        }
+
+        if (doApply) {
+          const desc = getDescriptor("theme");
+          if (!desc) return fail("Internal: theme resource descriptor not found.");
+          const created = await createResource(desc, {
+            name: themeName,
+            json_data: { customProperties: theme.customProperties, css: theme.css },
+          });
+          return ok({ applied: true, theme_name: themeName, theme, brief, created });
+        }
+
+        return ok({
+          applied: false,
+          theme_name: themeName,
+          theme,
+          brief,
+          note:
+            args.apply === false || !canElicit
+              ? "Spec only — not created. Re-run with apply=true (or hand this to the portal-theme-designer) to create the theme."
+              : "Not created (declined at confirmation).",
+        });
+      } catch (e) {
+        const msg = (e as Error)?.message ?? String(e);
+        if (/does not support/i.test(msg) && /elicit/i.test(msg)) {
+          return fail(
+            "This MCP client doesn't support interactive prompts (elicitation). Pass primary_color (+ optional " +
+              "mode/density/radius/font/accent_color/brand_name/website_url) and apply=true. Nothing was created."
           );
         }
         return fail(msg);
