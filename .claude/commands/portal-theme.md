@@ -1,4 +1,6 @@
 ---
+model: sonnet
+effort: medium
 description: Design or apply a portal theme.
 argument-hint: <theme goal / brand>
 ---

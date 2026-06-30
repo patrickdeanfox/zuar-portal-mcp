@@ -12,13 +12,51 @@ export const meta = {
 }
 
 // --- input ---------------------------------------------------------------
-// Pass the spec via Workflow `args`: either a plain string, or { spec, page_id }.
+// Pass the spec via Workflow `args`: either a plain string, or
+// { spec, page_id, tier }. tier ∈ 'fast' | 'standard' | 'max' (default 'standard').
 const spec = typeof args === 'string' ? args : (args && args.spec) || ''
 const pageId = args && typeof args === 'object' ? args.page_id : undefined
 if (!spec) {
-  log('No block spec provided in args. Pass args: "<what the block should show>" or { spec, page_id }.')
+  log('No block spec provided in args. Pass args: "<what the block should show>" or { spec, page_id, tier }.')
 }
 const pagePart = pageId ? ` Place it on layout/page ${pageId} when complete.` : ''
+
+// --- model / effort routing ----------------------------------------------
+// Dial cost vs. quality for the WHOLE pipeline with one knob:
+//   fast     — cheap iterative builds: sonnet/haiku at low effort, sonnet gates.
+//   standard — balanced default: sonnet builders, haiku responsive, opus gates.
+//   max      — premium complete build: opus builders/debug + xhigh judgment gates.
+// These per-stage opts are set explicitly (not inherited) so routing is guaranteed
+// regardless of the session/orchestrator model.
+const tier = (args && typeof args === 'object' && args.tier) || 'standard'
+const ROUTING = {
+  fast: {
+    build:      { model: 'sonnet', effort: 'low' },
+    style:      { model: 'sonnet', effort: 'low' },
+    responsive: { model: 'haiku',  effort: 'low' },
+    debug:      { model: 'sonnet', effort: 'low' },
+    adversary:  { model: 'sonnet', effort: 'medium' },
+    advisor:    { model: 'sonnet', effort: 'medium' },
+  },
+  standard: {
+    build:      { model: 'sonnet', effort: 'medium' },
+    style:      { model: 'sonnet', effort: 'medium' },
+    responsive: { model: 'haiku',  effort: 'low' },
+    debug:      { model: 'sonnet', effort: 'medium' },
+    adversary:  { model: 'opus',   effort: 'high' },
+    advisor:    { model: 'opus',   effort: 'high' },
+  },
+  max: {
+    build:      { model: 'opus',   effort: 'high' },
+    style:      { model: 'opus',   effort: 'medium' },
+    responsive: { model: 'sonnet', effort: 'low' },
+    debug:      { model: 'opus',   effort: 'high' },
+    adversary:  { model: 'opus',   effort: 'xhigh' },
+    advisor:    { model: 'opus',   effort: 'xhigh' },
+  },
+}
+const R = ROUTING[tier] || ROUTING.standard
+log(`Routing tier: ${tier} — builders=${R.build.model}/${R.build.effort}, gates=${R.adversary.model}/${R.adversary.effort}`)
 
 // --- schemas -------------------------------------------------------------
 const BUILD = {
@@ -89,7 +127,7 @@ const build = await agent(
   `Build a Zuar Portal block for this spec: ${spec}.${pagePart} Discover the datasource, verify the real ` +
     `columns, author the two-field block, bind via ui_queries (page_size null), validate_block, and create it. ` +
     `Return the block_id, the bound query_id + exact columns, the validate result, and hand-off notes.`,
-  { agentType: 'portal-block-builder', schema: BUILD, label: 'build', phase: 'Build' }
+  { agentType: 'portal-block-builder', ...R.build, schema: BUILD, label: 'build', phase: 'Build' }
 )
 if (!build || !build.block_id) {
   log('Builder did not return a block_id — stopping. ' + (build && build.open_questions ? JSON.stringify(build.open_questions) : ''))
@@ -103,14 +141,14 @@ const styled = await agent(
   `Apply the house design system to block ${blockId}. Builder notes: ${build.notes || '(none)'}. ` +
     `Restyle the css and refine markup for executive-grade UI/UX WITHOUT breaking the JS or the binding ` +
     `(get_block first, re-send ui_queries on update_block). validate_block, then update.`,
-  { agentType: 'portal-block-stylist', schema: STAGE, label: 'style', phase: 'Style' }
+  { agentType: 'portal-block-stylist', ...R.style, schema: STAGE, label: 'style', phase: 'Style' }
 )
 
 phase('Responsive')
 const responsive = await agent(
   `Make block ${blockId} responsive across breakpoints (KPI/grid collapse, charts stack, table scroll, ` +
     `touch targets, no overflow). Preserve the binding (re-send ui_queries). Stylist notes: ${styled && styled.notes || '(none)'}.`,
-  { agentType: 'portal-responsive-specialist', schema: STAGE, label: 'responsive', phase: 'Responsive' }
+  { agentType: 'portal-responsive-specialist', ...R.responsive, schema: STAGE, label: 'responsive', phase: 'Responsive' }
 )
 
 phase('Debug')
@@ -119,7 +157,7 @@ let debug = await agent(
     `blank-block cause), no $ trap, page_size correct, async loaded-callback present if needed, dispose-on-reload, ` +
     `live rows actually flow. Fix minimally, re-validate, update preserving ui_queries. Style/responsive notes: ` +
     `${[styled && styled.notes, responsive && responsive.notes].filter(Boolean).join(' | ') || '(none)'}.`,
-  { agentType: 'portal-block-debugger', schema: STAGE, label: 'debug', phase: 'Debug' }
+  { agentType: 'portal-block-debugger', ...R.debug, schema: STAGE, label: 'debug', phase: 'Debug' }
 )
 
 phase('Adversary')
@@ -127,7 +165,7 @@ let adversary = await agent(
   `Adversarially review block ${blockId} (read-only). Hunt the silent-data traps, the $ trap, unscoped-CSS ` +
     `collisions, missing loaded-callback, re-render leaks, edge cases (empty/null/huge data), a11y, and unsafe JS. ` +
     `Verify with execute_query/validate_block. Return findings with severity + evidence + blocking, a blocking_count, and a verdict.`,
-  { agentType: 'portal-block-adversary', schema: ADVERSARY, label: 'adversary', phase: 'Adversary' }
+  { agentType: 'portal-block-adversary', ...R.adversary, schema: ADVERSARY, label: 'adversary', phase: 'Adversary' }
 )
 
 // Loop: while the gate finds blocking issues, send them back to the debugger (max 2 rounds).
@@ -139,11 +177,11 @@ while (adversary && adversary.verdict === 'needs-fixes' && adversary.blocking_co
   debug = await agent(
     `Fix ONLY these blocking findings on block ${blockId}, then re-validate and update preserving ui_queries: ` +
       JSON.stringify(blockers),
-    { agentType: 'portal-block-debugger', schema: STAGE, label: `fix-r${round}`, phase: 'Debug' }
+    { agentType: 'portal-block-debugger', ...R.debug, schema: STAGE, label: `fix-r${round}`, phase: 'Debug' }
   )
   adversary = await agent(
     `Re-review block ${blockId} after the round-${round} fixes. Same hunt list; confirm the previously-blocking issues are resolved.`,
-    { agentType: 'portal-block-adversary', schema: ADVERSARY, label: `adversary-r${round}`, phase: 'Adversary' }
+    { agentType: 'portal-block-adversary', ...R.adversary, schema: ADVERSARY, label: `adversary-r${round}`, phase: 'Adversary' }
   )
 }
 
@@ -151,11 +189,12 @@ phase('Advise')
 const advisor = await agent(
   `Advise on block ${blockId} (read-only): does it answer the business question, is the metric/SQL correct, is the ` +
     `viz the best fit for the data shape, is the altitude right, what's missing? Return a verdict + prioritized must/nice improvements.`,
-  { agentType: 'portal-block-advisor', schema: ADVISOR, label: 'advisor', phase: 'Advise' }
+  { agentType: 'portal-block-advisor', ...R.advisor, schema: ADVISOR, label: 'advisor', phase: 'Advise' }
 )
 
 return {
   ok: true,
+  tier,
   block_id: blockId,
   name: build.name,
   bound_query: build.query_id,

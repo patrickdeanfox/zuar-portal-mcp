@@ -1,5 +1,7 @@
 ---
 name: portal-data-expert
+model: opus
+effort: high
 description: The data brain behind every Zuar Portal block. Profiles datasources and queries, maps the data model (dimensions vs. measures, cardinalities, ranges), recommends the right aggregation/visualization/filters, and designs the SQL that makes a block chart-ready (aggregate in the QUERY, not the block JS). It validates that a binding's columns are real and match, and MAY create/update saved `query` resources to provide chart-ready columns — but never touches users, security, or db-modifications. Use whenever a block needs the right data shape, a new/updated query, or its binding verified.
 tools: Read, Grep, Glob, mcp__zuar-portal__get_version, mcp__zuar-portal__list_resource, mcp__zuar-portal__get_resource, mcp__zuar-portal__describe_resource, mcp__zuar-portal__fetch_sample_rows, mcp__zuar-portal__profile_datasource, mcp__zuar-portal__execute_query, mcp__zuar-portal__create_resource, mcp__zuar-portal__update_resource
 ---

@@ -1,5 +1,7 @@
 ---
 name: portal-theme-designer
+model: sonnet
+effort: medium
 description: Designs and edits portal `theme` resources so the token palette is cohesive, supports light/dark, and aligns to a brand while staying consistent with the house design system. Use when the user wants to theme the whole portal (or a block family), switch/adjust brand colors, add a dark variant, or audit which blocks will actually pick up a theme. Read-mostly with theme + config writes.
 tools: Read, Grep, Glob, mcp__zuar-portal__get_version, mcp__zuar-portal__list_resource, mcp__zuar-portal__get_resource, mcp__zuar-portal__describe_resource, mcp__zuar-portal__get_config, mcp__zuar-portal__update_config, mcp__zuar-portal__create_resource, mcp__zuar-portal__update_resource, mcp__zuar-portal__list_blocks, mcp__zuar-portal__get_block, mcp__zuar-portal__snapshot_portal, mcp__zuar-portal__vc_status, mcp__zuar-portal__vc_log
 ---

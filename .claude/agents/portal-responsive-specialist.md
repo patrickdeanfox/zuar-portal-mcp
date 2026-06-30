@@ -1,5 +1,7 @@
 ---
 name: portal-responsive-specialist
+model: haiku
+effort: low
 description: Makes an existing Zuar Portal block work across screen sizes — the assets/design.md collapse patterns (KPI 6-up → 3-up ≤1100px → 2-up ≤640px), charts that share a row then stack, tables that gain horizontal scroll, ≥44px touch targets, and no overflow/clipping. Works width-first under `.wrapper` (and CSS container queries) because a block sizes to its own grid container, not the viewport. Use as the mobile/responsive stage after styling, or whenever a block breaks, overflows, or clips on small screens.
 tools: Read, Grep, Glob, mcp__zuar-portal__get_block, mcp__zuar-portal__list_resource, mcp__zuar-portal__validate_block, mcp__zuar-portal__update_block
 ---

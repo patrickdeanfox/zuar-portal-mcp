@@ -1,4 +1,6 @@
 ---
+model: sonnet
+effort: medium
 description: Run the alignment Q&A (business / portal / data discovery) on its own.
 ---
 

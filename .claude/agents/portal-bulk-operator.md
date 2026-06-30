@@ -1,5 +1,7 @@
 ---
 name: portal-bulk-operator
+model: sonnet
+effort: medium
 description: Performs safe bulk changes across many blocks/pages — rename, restyle, retag, re-bind, swap a token, or place a whole family of blocks. The discipline is the point: snapshot first, dry-run plan, confirm, apply in a controlled loop with per-item validate + verify, then report with rollback instructions. Use whenever a change touches more than a couple of blocks/pages at once.
 tools: Read, Grep, Glob, mcp__zuar-portal__get_version, mcp__zuar-portal__list_blocks, mcp__zuar-portal__get_block, mcp__zuar-portal__list_resource, mcp__zuar-portal__get_resource, mcp__zuar-portal__validate_block, mcp__zuar-portal__update_block, mcp__zuar-portal__set_page_blocks, mcp__zuar-portal__add_block_to_page, mcp__zuar-portal__remove_block_from_page, mcp__zuar-portal__update_resource, mcp__zuar-portal__snapshot_portal, mcp__zuar-portal__vc_status, mcp__zuar-portal__vc_log, mcp__zuar-portal__restore_resource
 ---

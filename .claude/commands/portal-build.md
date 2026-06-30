@@ -1,4 +1,6 @@
 ---
+model: sonnet
+effort: medium
 description: Build a portal block end-to-end through the quality pipeline.
 argument-hint: <what the block should show/do>
 ---
@@ -7,7 +9,12 @@ Build one portal block end-to-end. Spec: **$ARGUMENTS**
 
 **Pre-flight.** Confirm a portal is connected: call `active_config`. If nothing is active, stop and tell the user to run `/portal-setup` first.
 
-**One-shot option.** If the user just wants it done hands-off, offer the automated Workflow `.claude/workflows/portal-block-pipeline.js` — it fans the spec through the same gated pipeline below (looping while the adversary finds blocking issues) without step-by-step narration. Otherwise run the pipeline manually:
+**One-shot option.** If the user just wants it done hands-off, offer the automated Workflow `.claude/workflows/portal-block-pipeline.js` — it fans the spec through the same gated pipeline below (looping while the adversary finds blocking issues) without step-by-step narration. Pass a **`tier`** in the workflow `args` to dial cost vs. quality, inferred from how the user framed the ask:
+- `tier:'fast'` — a quick / rough / throwaway block ("just sketch", "rough draft", "while iterating"). Cheapest: sonnet/haiku at low effort.
+- `tier:'standard'` (default) — a normal build. Balanced: sonnet builders, opus judgment gates.
+- `tier:'max'` — a production / executive / "make it great" build. Opus builders + deepest-effort gates.
+
+When in doubt use `standard`; only go `max` if the user signals it matters. (Running the pipeline **manually** below uses each agent's own default model — the `standard` blend.) Otherwise run the pipeline manually:
 
 **The pipeline** (each stage via the Task tool; pass each stage's output — the `block_id` and its notes — to the next; blocks are never shipped raw):
 

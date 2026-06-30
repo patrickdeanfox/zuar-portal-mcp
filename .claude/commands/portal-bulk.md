@@ -1,4 +1,6 @@
 ---
+model: sonnet
+effort: medium
 description: A guarded bulk change across many blocks/pages.
 argument-hint: <the change to make>
 ---

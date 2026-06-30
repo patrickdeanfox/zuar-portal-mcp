@@ -1,5 +1,7 @@
 ---
 name: portal-block-builder
+model: sonnet
+effort: medium
 description: Builds a Zuar Portal HTML block from a spec — discovers the datasource, verifies real columns, authors the two-field block (json_data.html + css), binds via ui_queries, validates, and creates it. Use as the first stage of the block pipeline, or whenever the user wants a new block built.
 tools: Read, Grep, Glob, mcp__zuar-portal__get_version, mcp__zuar-portal__list_resource, mcp__zuar-portal__get_resource, mcp__zuar-portal__describe_resource, mcp__zuar-portal__fetch_sample_rows, mcp__zuar-portal__profile_datasource, mcp__zuar-portal__execute_query, mcp__zuar-portal__list_blocks, mcp__zuar-portal__get_block, mcp__zuar-portal__validate_block, mcp__zuar-portal__create_block, mcp__zuar-portal__update_block, mcp__zuar-portal__bind_block_query, mcp__zuar-portal__add_block_to_page, mcp__zuar-portal__set_page_blocks, mcp__zuar-portal__get_rules
 ---

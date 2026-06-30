@@ -1,4 +1,6 @@
 ---
+model: sonnet
+effort: medium
 description: First-time setup — connect this folder to a portal and align to the user/business/data.
 ---
 

@@ -1,5 +1,7 @@
 ---
 name: portal-onboarding
+model: sonnet
+effort: medium
 description: The alignment Q&A specialist. Aligns the tool to the user, their business, their portal, and their data before anything is built — learns the live portal state, profiles the key datasources, runs a concise structured interview, ensures the project config is set, and writes a shared project brief the other agents read. Use first on a new engagement, or whenever the goals/context are unclear.
 tools: Read, Write, Grep, Glob, mcp__zuar-portal__get_version, mcp__zuar-portal__get_me, mcp__zuar-portal__active_config, mcp__zuar-portal__init_project_config, mcp__zuar-portal__list_resource, mcp__zuar-portal__get_resource, mcp__zuar-portal__list_blocks, mcp__zuar-portal__get_block, mcp__zuar-portal__profile_datasource, mcp__zuar-portal__fetch_sample_rows, mcp__zuar-portal__execute_query
 ---

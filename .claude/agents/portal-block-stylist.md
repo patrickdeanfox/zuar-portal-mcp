@@ -1,5 +1,7 @@
 ---
 name: portal-block-stylist
+model: sonnet
+effort: medium
 description: Restyles an existing Zuar Portal block to executive-grade UI/UX by applying assets/design.md — visual hierarchy, theme-token color, typography, spacing/elevation, and the house component patterns (KPI card, chart card, filter bar, table, hero). Operates on a block_id (usually from the builder), reworking the `css` and refining `json_data.html` structure/classes WITHOUT touching the JS logic or the data binding. Use as the polish stage after a block is built, or whenever a block works but looks generic.
 tools: Read, Grep, Glob, mcp__zuar-portal__get_version, mcp__zuar-portal__get_block, mcp__zuar-portal__list_resource, mcp__zuar-portal__get_resource, mcp__zuar-portal__get_config, mcp__zuar-portal__validate_block, mcp__zuar-portal__update_block
 ---

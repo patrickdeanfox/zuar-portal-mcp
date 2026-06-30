@@ -1,5 +1,7 @@
 ---
 name: portal-block-adversary
+model: opus
+effort: high
 description: Read-only red team / quality gate for a Zuar Portal block. Given a block_id (plus the builder's/stylist's notes), it tries to BREAK the block — hunting the silent-data traps, the `$` trap, unscoped-CSS collisions, missing loaded-callback / dispose, edge cases, a11y gaps, and unsafe code — and verifies each claim with evidence (execute_query column diffs, validate_block). Use as the adversary gate near the end of the block pipeline to decide ship vs. loop-back-to-debugger.
 tools: Read, Grep, Glob, mcp__zuar-portal__get_version, mcp__zuar-portal__get_block, mcp__zuar-portal__list_resource, mcp__zuar-portal__get_resource, mcp__zuar-portal__execute_query, mcp__zuar-portal__profile_datasource, mcp__zuar-portal__validate_block, mcp__zuar-portal__fetch_sample_rows, mcp__zuar-portal__vc_status, mcp__zuar-portal__vc_log
 ---

@@ -55,6 +55,35 @@ Deterministic multi-agent orchestration scripts for the `Workflow` tool:
 - `portal-block-pipeline.js` — fan a spec through the gated pipeline, looping while the adversary finds blocking issues.
 - `portal-audit.js` — fan auditors across every block and synthesize a ranked report.
 
+## Model & effort routing
+
+Each role runs on the model and reasoning effort that fits its job — sharp where judgment
+matters, cheap where the work is mechanical. There are three layers, and they compose:
+
+1. **Agent frontmatter (`model:` / `effort:`)** — the default for a *direct* call (a fast surgical
+   edit, or one agent dispatched from a command). This is the backbone:
+
+   | Tier | Agents | model · effort |
+   |---|---|---|
+   | Judgment / data | data-expert, adversary, advisor | **opus · high** |
+   | Authoring | builder, stylist, debugger, bulk-operator, theme-designer, onboarding | sonnet · medium |
+   | Mechanical | responsive-specialist | **haiku · low** |
+
+2. **Workflow `tier` arg** — `portal-block-pipeline.js` and `portal-audit.js` take
+   `args:{ …, tier }` (`'fast' | 'standard' | 'max'`, default `standard`) and set each stage's
+   model/effort *explicitly* (so routing holds regardless of the session model):
+   - `fast` — cheap iterative builds / triage sweeps (sonnet + haiku, low effort).
+   - `standard` — the balanced blend above (sonnet builders, opus gates).
+   - `max` — premium complete build / pre-release audit (opus builders + xhigh judgment gates).
+
+3. **Command frontmatter** — the six `/portal-*` commands pin to **sonnet · medium**: they only
+   orchestrate (pre-flight, dispatch, synthesize); the quality lives in the agents/workflow they call.
+
+**To re-tier:** change `model:`/`effort:` in an agent's frontmatter (single-shot default) or the
+`ROUTING` table at the top of a workflow (per-stage). The MCP *server* never selects a model —
+only the agents/commands/workflows that drive it do. Valid models: `opus`, `sonnet`, `haiku`,
+`fable`, or a full id; effort: `low|medium|high|xhigh|max`.
+
 ## Design & safety notes
 - Source of truth is always the live portal + `assets/conventions.md` + `assets/design.md` — agents read them, they don't guess.
 - Writes are mirrored to the version-control repo when configured (`vc_status`), so any change is revertible (`restore_resource`).

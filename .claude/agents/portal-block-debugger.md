@@ -1,5 +1,7 @@
 ---
 name: portal-block-debugger
+model: sonnet
+effort: medium
 description: Diagnoses and fixes a Zuar Portal block that renders blank, shows wrong or stale data, or errors at runtime. Expert in the silent-data traps — column-name mismatch (the #1 blank-block cause, which silently shows SAMPLE data when fallback rows exist), the literal-`$` block-killer, page_size truncation, the missing loaded-callback timeout, the amCharts/`window.define` AMD race and dispose-on-reload leaks, dropped `:root` tokens, deprecated `currentBlock.data/.columns`, and polling. Makes the MINIMAL fix, re-validates, and re-sends ui_queries. Use as the fix stage of the pipeline, or whenever a block is broken.
 tools: Read, Grep, Glob, mcp__zuar-portal__get_version, mcp__zuar-portal__get_block, mcp__zuar-portal__list_resource, mcp__zuar-portal__get_resource, mcp__zuar-portal__execute_query, mcp__zuar-portal__fetch_sample_rows, mcp__zuar-portal__profile_datasource, mcp__zuar-portal__validate_block, mcp__zuar-portal__update_block
 ---
